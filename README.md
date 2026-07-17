@@ -1,0 +1,200 @@
+# Prodigy Fire Weather Morning Brief
+
+Pulls **NFDRS fire danger outputs** (Spread Component, Energy Release Component,
+Burning Index) from the U.S. Forest Service **Fire Environment Mapping System
+(FEMS)** for RAWS stations grouped by **Geographic Area Coordination Center
+(GACC)** across the West Coast and Rocky Mountains, then emails a formatted
+morning briefing to the sales team.
+
+FEMS is the official NFDRS system that replaced WIMS. Its public read-only API
+serves current data (5 days back + 7-day forecast) with no login for short
+windows — which is exactly what this tool uses.
+
+---
+
+## What the brief contains
+
+- **One table per coordination center** (NWCC, ONCC, OSCC, GBCC, NRCC, RMCC),
+  each row listing **SC**, **ERC**, and **BI** for a station.
+- A **"Highest fire danger this morning"** summary ranking the hottest stations
+  across every center by Burning Index.
+- **BI trend** vs. the prior day and the **7-day forecast peak BI** per station.
+- Optional **Low → Extreme** color chips where you supply station percentile
+  breakpoints (see `thresholds` in `config.yaml`).
+
+---
+
+## 1. Install
+
+```bash
+pip install -r requirements.txt
+```
+Requires Python 3.9+.
+
+## 2. Pick your stations (one-time)
+
+The API identifies stations by a numeric FEMS **station id** (e.g. `101222`).
+To find the ids for the stations you care about:
+
+1. Open <https://fems.fs2c.usda.gov/download>
+2. In **Selected Station(s)**, search by station name, station ID, or WRCC ID.
+3. Set Data Subject Area = **Fire Danger**, then click **Copy Data Link**.
+4. In the copied URL, read the value after `stationIds=` — those numbers are the
+   ids. Paste them into `config.yaml`, replacing every `REPLACE_ME_#`.
+
+Then confirm they resolve:
+```bash
+python fire_weather_brief.py --verify
+```
+This prints each station with its latest SC / ERC / BI (or an error) without
+sending anything.
+
+> Tip: for a sales briefing, pick a few representative RAWS in each GACC — ideally
+> near your key accounts or the Fire Danger Rating Areas you sell into. Set each
+> center's `fuel_models` to the model named in that area's Fire Danger Operating
+> Plan (Y = timber is the common default; SoCal chaparral often uses X).
+
+## 3. No email needed — the brief publishes to a URL instead
+
+By default this tool never sends email. It builds `brief.html` and (via the
+included GitHub Actions workflow) publishes it to **GitHub Pages**, so you get
+a bookmarkable link instead of an inbox — no SMTP account, app password, or
+secrets to configure.
+
+## 4. Test it
+
+```bash
+python fire_weather_brief.py --dry-run     # builds brief.html + prints text, no email
+```
+Open `brief.html` in a browser to preview it.
+
+---
+
+## 5. Schedule it every morning
+
+### Option A — GitHub Actions + GitHub Pages (recommended; runs even when your laptop is off)
+1. Put this folder in a GitHub repo.
+2. Repo **Settings → Pages → Build and deployment → Source** → select
+   **"GitHub Actions"** → Save. (One-time.)
+3. The included `.github/workflows/fire-weather-brief.yml` runs daily at 6 AM
+   Pacific, builds the brief, and publishes it to
+   `https://<your-github-username>.github.io/<repo-name>/`. Edit the `cron:`
+   line to change the time.
+
+### Option B — cron (Mac/Linux, machine must be on)
+```bash
+crontab -e
+# 6:00 AM daily — adjust path and python as needed:
+0 6 * * *  cd /path/to/tool && /usr/bin/python3 fire_weather_brief.py --dry-run >> brief.log 2>&1
+```
+This regenerates `brief.html` locally each morning; open it in a browser.
+
+### Option C — Windows Task Scheduler
+Create a Basic Task → Daily → 6:00 AM → Action "Start a program":
+- Program: `python`
+- Arguments: `fire_weather_brief.py --dry-run`
+- Start in: the tool folder
+
+---
+
+## Optional: send by email instead
+
+If you'd rather have the brief emailed than published to a link, the original
+email path still works:
+
+1. Edit the `email:` block in `config.yaml` (sending account; recipient is
+   already set to michael@prodigywildfire.com). The password is **never
+   stored in the file** — it's read from an environment variable:
+   ```bash
+   export FEMS_SMTP_PASSWORD='your-app-password'
+   ```
+   - **Google Workspace** (`smtp.gmail.com`): create an *App Password*
+     (myaccount.google.com → Security → 2-Step Verification → App passwords).
+   - **Microsoft 365** (`smtp.office365.com`): use an app password / SMTP AUTH
+     account.
+2. Run `python fire_weather_brief.py` (no `--dry-run`) to build and email it.
+3. For GitHub Actions, add secret `FEMS_SMTP_PASSWORD` under **Settings →
+   Secrets and variables → Actions**, then change the workflow's build step to
+   run `python fire_weather_brief.py` instead of the `--dry-run` + Pages steps.
+
+---
+
+## Field reference
+
+| Field | Meaning |
+|------|---------|
+| **SC** — Spread Component | rate-of-spread potential (open-ended) |
+| **ERC** — Energy Release Component | available energy / drought signal (slow-moving) |
+| **BI** — Burning Index | ~ effort to contain; roughly 10× estimated flame length |
+
+Values shown are the **daily maximum** for each index (FEMS daily-summary feed).
+
+## Notes & limits
+- No-login API requests are limited to short windows; this tool uses the rolling
+  "5 days back + 7-day forecast" preset, which stays well inside that limit.
+- Absolute index values are **not comparable between stations** without
+  station-specific percentiles — that's why adjective ratings appear only where
+  you configure breakpoints.
+- FEMS occasionally revises endpoints. If a fetch starts failing, regenerate a
+  Copy Data Link from the FEMS download page and compare the query parameters in
+  `fetch_nfdr_csv()`.
+- Data source: USFS Fire Environment Mapping System (FEMS),
+  `https://fems.fs2c.usda.gov`.
+
+
+---
+
+## What's new: weather + significant fire potential
+
+**Weather columns.** Each station row now also shows **Min RH** (daily minimum
+relative humidity), **Wind** and **Gust** (daily max mph), pulled from the FEMS
+weather feed. RH ≤ 15% or wind ≥ 25 mph is flagged red. Turn this off with
+`weather: {enabled: false}` in `config.yaml`.
+
+**Significant Fire Potential section.** At the top of the brief:
+- **Live NWS alerts** — active **Red Flag Warnings** and **Fire Weather Watches**
+  for the states in `significant_fire_potential.states`, grouped by state, from
+  the official `api.weather.gov` feed (no key needed). NWS requires a contact in
+  the request header; the tool uses `contact_email` from the config.
+- **Predictive Services 7-day outlook links** — the national viewer plus each
+  GACC's 7-Day Significant Fire Potential page, for the forecaster narrative that
+  can't be reduced to a number.
+
+Both degrade gracefully: if the alert feed is briefly unreachable, the brief
+still sends with the fire danger tables and outlook links, noting the feed was
+unavailable.
+
+
+---
+
+## Trend chart: fire danger vs. yesterday
+
+The brief now includes a compact **"Overnight fire danger movement"** chart: a
+diverging bar per station showing the change in Burning Index vs. yesterday
+(red = danger rose overnight, green = eased), sorted by magnitude. It gives the
+team a one-glance read on where conditions are deteriorating.
+
+- It's a pre-rendered PNG embedded **inline via CID**, which displays in Gmail,
+  Outlook, and Apple Mail without the recipient enabling anything.
+- The plain-text copy of the email lists the same movement as an
+  "Overnight movement" section, so nothing is lost if images are blocked.
+- Needs `matplotlib` (in requirements.txt). If it's ever missing, the chart is
+  simply skipped and the rest of the brief still sends.
+- A station only appears once it has both a yesterday and a today value, so the
+  chart fills in after the first two days of runs.
+
+
+---
+
+## Keeping the schedule alive (the 60-day thing)
+
+GitHub disables scheduled workflows after 60 days with no commits to the default
+branch — and workflow runs, tags, and releases don't count as commits. The
+included `.github/workflows/keepalive.yml` prevents this by making one tiny
+commit every Monday, which resets the clock for the whole repo. It sustains
+itself, so once it's in place the morning brief runs indefinitely untouched.
+
+**One-time setting so it can push its commit:** Repo **Settings -> Actions ->
+General -> Workflow permissions -> "Read and write permissions" -> Save.** After
+that, open the **Actions** tab, pick **Keepalive**, and hit **Run workflow** once
+to confirm it can commit successfully.

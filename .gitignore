@@ -1,0 +1,5 @@
+public/
+brief.html
+__pycache__/
+*.pyc
+.claude/

@@ -1,0 +1,51 @@
+name: Fire Weather Morning Brief
+
+# Runs every day at 6:00 AM Pacific, year-round, builds the brief, and
+# publishes it to GitHub Pages instead of emailing it. No SMTP setup needed.
+# The timezone field (GitHub Actions, since Mar 2026) handles daylight saving
+# automatically. To change the time, edit the hour in the cron line (24-hour).
+# If your org ever doesn't support timezone:, delete that line and use
+#   - cron: "0 13 * * *"   (13:00 UTC = ~6 AM Pacific, but drifts with DST)
+#
+# ONE-TIME SETUP REQUIRED:
+#   Repo Settings -> Pages -> Build and deployment -> Source
+#   -> select "GitHub Actions" -> Save.
+# After that, the brief is live at:
+#   https://<your-github-username>.github.io/<repo-name>/
+on:
+  schedule:
+    - cron: "0 6 * * *"
+      timezone: "America/Los_Angeles"
+  workflow_dispatch: {}     # adds a "Run workflow" button for manual test runs
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Build the brief (no email)
+        run: |
+          python fire_weather_brief.py --dry-run --out brief.html
+          mkdir -p public
+          cp brief.html public/index.html
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4

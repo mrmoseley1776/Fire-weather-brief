@@ -1,0 +1,115 @@
+# =============================================================================
+# Prodigy Fire Weather Brief — configuration
+# =============================================================================
+# Before the first real run:
+#   1. Replace every REPLACE_ME_# with a real FEMS station ID.
+#      Get IDs at https://fems.fs2c.usda.gov/download : search a station,
+#      click "Copy Data Link", and read the number after stationIds= .
+#      Test with:  python fire_weather_brief.py --verify
+#   2. Fill in the email block (account the brief is sent FROM).
+# The weather and significant_fire_potential sections work out of the box.
+# =============================================================================
+
+email:
+  smtp_host: smtp.gmail.com          # Google Workspace: smtp.gmail.com
+                                     # Microsoft 365:    smtp.office365.com
+  smtp_port: 587
+  smtp_user: fireweather@prodigywildfire.com
+  from_addr: fireweather@prodigywildfire.com
+  smtp_password_env: FEMS_SMTP_PASSWORD   # password read from this env var
+  to_addrs:
+    - michael@prodigywildfire.com
+  subject_prefix: "Prodigy Fire Weather Brief"
+
+data:
+  dataset: all               # observation | forecast | all (obs + 7-day forecast)
+  fuel_models_default: Y      # NFDRS2016 fuel model (V/W/X/Y/Z)
+
+# Adds Min RH / Max Wind / Max Gust columns pulled from the FEMS weather feed.
+# Set enabled: false to drop those columns and skip the extra API calls.
+weather:
+  enabled: true
+
+# 7-day significant fire potential summary.
+# Live section = active NWS Red Flag Warnings + Fire Weather Watches for the
+# states below (official api.weather.gov feed, no key needed). Plus links to the
+# human-authored Predictive Services 7-day outlooks.
+significant_fire_potential:
+  enabled: true
+  # NWS requires a contact in the request User-Agent; your from address is fine.
+  contact_email: fireweather@prodigywildfire.com
+  # States scanned for fire alerts (West Coast + Rockies footprint).
+  states: [WA, OR, CA, NV, ID, MT, UT, WY, CO, SD]
+  predictive_services_links:
+    - { label: "National 7-Day", url: "https://fsapps.nwcg.gov/psp/npsg/forecast/#/outlooks" }
+    - { label: "NW", url: "https://gacc.nifc.gov/nwcc/predict/outlook.aspx" }
+    - { label: "N. Cal", url: "https://gacc.nifc.gov/oncc/outlooks.php" }
+    - { label: "S. Cal", url: "https://gacc.nifc.gov/oscc/predictive/weather/index.htm" }
+    - { label: "Great Basin", url: "https://gacc.nifc.gov/gbcc/" }
+    - { label: "N. Rockies", url: "https://gacc.nifc.gov/nrcc/predictive/outlooks/outlooks.htm" }
+    - { label: "Rocky Mtn", url: "https://gacc.nifc.gov/rmcc/" }
+
+# -----------------------------------------------------------------------------
+# Coordination centers (GACCs). Add/remove stations freely; "name" is optional
+# but helps line up the FEMS response and shows in the brief.
+# -----------------------------------------------------------------------------
+coordination_centers:
+
+  - code: NWCC
+    name: "Northwest — Oregon / Washington"
+    fuel_models: Y
+    stations:
+      - { id: 452138, name: "ENTIAT" }
+      - { id: 353115, name: "ILLINOIS VALLEY AIRPORT" }
+      - { id: 350728, name: "EAGLE CREEK" }
+
+  - code: ONCC
+    name: "Northern California"
+    fuel_models: Y
+    stations:
+      - { id: 40611, name: "REDDING" }
+      - { id: 41018, name: "MENDOCINO PASS" }
+      - { id: 40217, name: "MT. SHASTA" }
+
+  - code: OSCC
+    name: "Southern California"
+    fuel_models: X
+    stations:
+      - { id: 45433, name: "MALIBU HILLS" }
+      - { id: 45708, name: "JULIAN" }
+      - { id: 55522307, name: "LAKE MATHEWS" }
+
+  - code: GBCC
+    name: "Great Basin — NV / UT / S. Idaho"
+    fuel_models: Y
+    stations:
+      - { id: 261702, name: "KYLE CANYON" }
+      - { id: 422503, name: "COTTONWOOD MTN" }
+      - { id: 102709, name: "MOUNTAIN HOME" }
+
+  - code: NRCC
+    name: "Northern Rockies — MT / N. Idaho"
+    fuel_models: Y
+    stations:
+      - { id: 240207, name: "WEST GLACIER" }
+      - { id: 241508, name: "SEELEY LAKE" }
+      - { id: 100711, name: "PIERCE" }
+
+  - code: RMCC
+    name: "Rocky Mountain — CO / WY / SD"
+    fuel_models: Y
+    stations:
+      - { id: 51508, name: "STORM KING MOUNTAIN" }
+      - { id: 53605, name: "RAMPART RANGE" }
+      - { id: 393507, name: "CUSTER STATE PARK" }
+
+# -----------------------------------------------------------------------------
+# OPTIONAL: adjective-class breakpoints per station (station id -> index -> 4
+# ascending upper bounds for Low/Moderate/High/Very High). From the station's
+# Fire Danger Pocket Card / Operating Plan. Absolute values are not comparable
+# between stations, so chips only show where breakpoints are provided.
+# -----------------------------------------------------------------------------
+thresholds: {}
+  # "101222":
+  #   erc: [29, 41, 52, 64]
+  #   bi:  [30, 55, 80, 110]
