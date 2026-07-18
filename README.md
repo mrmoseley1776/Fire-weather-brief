@@ -168,7 +168,8 @@ NFDRS, so it isn't (and can't be) included.
   the request header; the tool uses `contact_email` from the config.
 - **Predictive Services 7-day outlook links** — the national viewer plus each
   GACC's 7-Day Significant Fire Potential page, for the forecaster narrative that
-  can't be reduced to a number.
+  can't be reduced to a number, plus a direct link to the **National Sitrep
+  (PDF)** from NIFC (`nifc.gov/nicc-files/sitreprt.pdf`, always the latest one).
 
 Both degrade gracefully: if the alert feed is briefly unreachable, the brief
 still sends with the fire danger tables and outlook links, noting the feed was
@@ -177,22 +178,14 @@ unavailable.
 
 ---
 
-## Trend chart: fire danger vs. yesterday
+## Overnight movement (no chart)
 
-The brief now includes a compact **"Overnight fire danger movement"** chart: a
-diverging bar per station showing the change in Burning Index vs. yesterday
-(red = danger rose overnight, green = eased), sorted by magnitude. It gives the
-team a one-glance read on where conditions are deteriorating.
-
-- It's a pre-rendered PNG embedded **inline via CID**, which displays in Gmail,
-  Outlook, and Apple Mail without the recipient enabling anything.
-- The plain-text copy of the email lists the same movement as an
-  "Overnight movement" section, so nothing is lost if images are blocked.
-- Needs `matplotlib` (in requirements.txt). If it's ever missing, the chart is
-  simply skipped and the rest of the brief still sends.
-- A station only appears once it has both a yesterday and a today value, so the
-  chart fills in after the first two days of runs.
-
+Earlier versions rendered a pre-rendered PNG bar chart of Burning Index change
+vs. yesterday. It's been removed in favor of the **National Sitrep (PDF)** link
+in the Significant Fire Potential box (see below) — the official NICC daily
+sitrep is a more authoritative one-glance read on where things stand
+nationally. The BI trend arrow (per-station table) and the plain-text
+"Overnight movement" list still show each station's day-over-day change.
 
 ---
 

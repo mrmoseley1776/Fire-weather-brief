@@ -16,7 +16,7 @@ then renders an HTML/plain-text email and sends it. Recipient:
 
 - `fire_weather_brief.py` — the whole program (fetch, parse, render, email, chart).
 - `config.yaml` — all user settings. **This is the only file the user normally edits.**
-- `requirements.txt` — `requests`, `PyYAML`, `matplotlib`.
+- `requirements.txt` — `requests`, `PyYAML`.
 - `.github/workflows/fire-weather-brief.yml` — daily 6 AM Pacific run (GitHub Actions).
 - `.github/workflows/keepalive.yml` — weekly commit so the schedule isn't auto-disabled after 60 days.
 - `README.md` — full setup, scheduling, and field reference for the user.
@@ -90,12 +90,18 @@ it's wired up by default.
 - Adjective ratings (Low→Extreme chips) only render where the user provides
   per-station percentile breakpoints in `thresholds:` — absolute NFDR values are
   NOT comparable across stations, so never invent thresholds.
-- Trend chart: `build_trend_chart()` (matplotlib) → diverging "BI vs. yesterday"
-  bars, embedded **inline via CID** in email and as a data-URI in the preview.
-  It's optional: if matplotlib is missing it returns None and the brief still
-  sends. A station appears only once it has both a yesterday and today value.
-- Everything degrades gracefully: a failed weather fetch, alert fetch, or chart
-  never blocks the core danger tables from sending.
+- No trend chart: an earlier version rendered a matplotlib PNG bar chart of BI
+  change vs. yesterday, embedded inline via CID. It was removed (per-station
+  BI trend arrow + the plain-text "Overnight movement" list already cover this,
+  and `predictive_services_links` now includes a link to NIFC's National
+  Sitrep PDF instead). `collect_movers()` still exists and feeds the plain-text
+  section — don't reintroduce `matplotlib` to `requirements.txt` unless a chart
+  is explicitly requested again.
+- Logo: `assets/logo.png` (recolored so its text is white, for the current
+  black header) is embedded the same way — CID in email, data-URI in preview —
+  via `logo_bytes`/`logo_preview_src`/`logo_email_src` in `main()`.
+- Everything degrades gracefully: a failed weather fetch or alert fetch never
+  blocks the core danger tables from sending.
 
 ## Common tasks
 

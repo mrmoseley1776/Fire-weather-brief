@@ -480,74 +480,12 @@ def collect_movers(gacc_rows) -> list[tuple[str, str, float, float]]:
     return movers
 
 
-def build_trend_chart(gacc_rows) -> Optional[bytes]:
-    """Compact diverging bar chart of BI change vs. yesterday. Returns PNG bytes,
-    or None if matplotlib is unavailable or there is nothing to plot."""
-    movers = collect_movers(gacc_rows)
-    if not movers:
-        return None
-    try:
-        import io as _io
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-    except Exception:  # noqa: BLE001 - chart is optional, never fatal
-        return None
-
-    # Sort by today's actual BI (ascending -> highest current risk on top), so
-    # the chart reads as a risk-ranked list, not just a ranked-by-swing list.
-    # NOTE: BI is not comparable across stations without station-specific
-    # percentiles, so this ordering/labeling shows each station's own number
-    # rather than implying a universal "high/low" scale across stations.
-    movers.sort(key=lambda m: m[3])
-    labels = [f"{m[0]} ({m[1]})  — BI {m[3]:.0f}" for m in movers]
-    deltas = [m[2] for m in movers]
-
-    def color(d):
-        if d > 8:
-            return "#c62828"
-        if d > 0:
-            return "#ef6c00"
-        if d == 0:
-            return "#9e9d24"
-        if d > -8:
-            return "#66bb6a"
-        return "#2e7d32"
-
-    colors = [color(d) for d in deltas]
-    n = len(movers)
-    fig, ax = plt.subplots(figsize=(7.0, max(1.6, 0.42 * n + 0.9)), dpi=140)
-    ax.barh(range(n), deltas, color=colors, height=0.62, zorder=3)
-    ax.axvline(0, color="#455a64", lw=1)
-    ax.set_yticks(range(n))
-    ax.set_yticklabels(labels, fontsize=9)
-    ax.set_xlabel("\u2190 easing        Burning Index change vs. yesterday        "
-                  "worsening \u2192", fontsize=9)
-    ax.set_title("Fire danger: current risk (top = highest) & overnight movement",
-                 fontsize=12, fontweight="bold", loc="left", color="#E8590C")
-    mx = max(5.0, max(abs(d) for d in deltas))
-    ax.set_xlim(-mx * 1.35, mx * 1.35)
-    for i, d in enumerate(deltas):
-        off = mx * 0.04
-        ax.text(d + (off if d >= 0 else -off), i, f"{d:+.0f}", va="center",
-                ha="left" if d >= 0 else "right", fontsize=9, fontweight="bold",
-                color=colors[i])
-    for sp in ("top", "right", "left"):
-        ax.spines[sp].set_visible(False)
-    ax.tick_params(length=0)
-    ax.grid(axis="x", color="#eceff1", zorder=0)
-    fig.tight_layout()
-    buf = _io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight")
-    plt.close(fig)
-    return buf.getvalue()
-
 
 # --------------------------------------------------------------------------- #
 # Rendering — HTML
 # --------------------------------------------------------------------------- #
 def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
-                want_weather=True, chart_src=None, want_fm=True, logo_src=None) -> str:
+                want_weather=True, want_fm=True, logo_src=None) -> str:
     def rating_cell(val, station_id, index_key):
         bp = thresholds.get(str(station_id), {}).get(index_key)
         level = classify(val, bp)
@@ -577,14 +515,6 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
         )
 
     sfp_html = render_sfp_html(sfp) if sfp else ""
-
-    chart_html = ""
-    if chart_src:
-        chart_html = (
-            '<div style="border:1px solid #e8c9a0;border-radius:8px;padding:10px 12px;'
-            'margin:0 0 18px;text-align:center;">'
-            f'<img src="{chart_src}" alt="Burning Index change vs. yesterday" '
-            'style="max-width:100%;height:auto;" width="720"></div>')
 
     # weather columns
     wx_head = ('<th align="center">Min RH</th><th align="center">Wind</th>'
@@ -681,7 +611,6 @@ Prodigy Fire Weather Brief</div>
 <div style="padding:20px 24px;">
 {top_html}
 {sfp_html}
-{chart_html}
 {''.join(blocks)}
 <p style="font-size:11px;color:#8a8574;margin-top:24px;line-height:1.5;">
 SC = Spread Component &middot; ERC = Energy Release Component &middot;
@@ -918,13 +847,6 @@ def main() -> int:
     gacc_rows, ranked = build_gacc_reports(gaccs, dataset, want_weather)
     sfp = build_sfp(cfg)
 
-    chart_bytes = build_trend_chart(gacc_rows)
-    chart_preview_src = None
-    chart_email_src = None
-    if chart_bytes:
-        chart_preview_src = "data:image/png;base64," + base64.b64encode(chart_bytes).decode()
-        chart_email_src = "cid:trend"
-
     logo_path = Path(__file__).resolve().parent / "assets" / "logo.png"
     logo_bytes = logo_path.read_bytes() if logo_path.exists() else None
     logo_preview_src = None
@@ -935,7 +857,7 @@ def main() -> int:
 
     text = render_text(gacc_rows, ranked, now, sfp, want_weather, want_fm)
     preview_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
-                               want_weather, chart_preview_src, want_fm,
+                               want_weather, want_fm,
                                logo_src=logo_preview_src)
 
     with open(args.out, "w", encoding="utf-8") as fh:
@@ -951,11 +873,9 @@ def main() -> int:
         return 0
 
     email_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
-                             want_weather, chart_email_src, want_fm,
+                             want_weather, want_fm,
                              logo_src=logo_email_src)
     inline_images = {}
-    if chart_bytes:
-        inline_images["trend"] = chart_bytes
     if logo_bytes:
         inline_images["logo"] = logo_bytes
     send_email(cfg, subject, email_html, text, inline_images=inline_images)

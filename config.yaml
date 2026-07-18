@@ -48,6 +48,7 @@ significant_fire_potential:
   # States scanned for fire alerts (West Coast + Rockies footprint).
   states: [WA, OR, CA, NV, ID, MT, UT, WY, CO, SD]
   predictive_services_links:
+    - { label: "National Sitrep (PDF)", url: "https://www.nifc.gov/nicc-files/sitreprt.pdf" }
     - { label: "National 7-Day", url: "https://fsapps.nwcg.gov/psp/npsg/forecast/#/outlooks" }
     - { label: "NW", url: "https://gacc.nifc.gov/nwcc/predict/outlook.aspx" }
     - { label: "N. Cal", url: "https://gacc.nifc.gov/oncc/outlooks.php" }
