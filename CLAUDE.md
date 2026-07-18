@@ -16,7 +16,9 @@ then renders an HTML/plain-text email and sends it. Recipient:
 
 - `fire_weather_brief.py` — the whole program (fetch, parse, render, email, chart).
 - `config.yaml` — all user settings. **This is the only file the user normally edits.**
-- `requirements.txt` — `requests`, `PyYAML`, `playwright` (PDF export, optional at runtime).
+- `requirements.txt` — `requests`, `PyYAML`, `playwright` (PDF-of-the-brief
+  export, optional at runtime), `pdfplumber` (parses the NICC sitrep PDF for the
+  National Sitrep Summary box — unrelated to the Playwright PDF export).
 - `.github/workflows/fire-weather-brief.yml` — daily 6 AM Pacific run (GitHub Actions).
 - `.github/workflows/keepalive.yml` — weekly commit so the schedule isn't auto-disabled after 60 days.
 - `README.md` — full setup, scheduling, and field reference for the user.
@@ -114,6 +116,32 @@ it's wired up by default.
   not `alternative`).
 - Everything degrades gracefully: a failed weather fetch, alert fetch, or PDF
   render never blocks the core danger tables / email from sending.
+- National Sitrep Summary box: `fetch_sitrep_pdf()` downloads the same NICC
+  sitrep PDF linked in `predictive_services_links` (`SITREP_URL`), and
+  `parse_sitrep_summary()` uses `pdfplumber` to regex-extract page-1 headline
+  numbers (National Preparedness Level, initial attack level/count, new/
+  contained/uncontained large fires) plus a per-GACC `PL / incidents /
+  cumulative acres` row for each configured GACC code, matched against the
+  report's fixed-width summary table. `build_sitrep_summary()` (called from
+  `main()`) wraps fetch+parse in try/except and honors
+  `national_sitrep.enabled` (default true) — returns `None` on any failure
+  (network error, changed PDF layout, missing `pdfplumber`), which silently
+  skips the whole box; never invent/guess sitrep numbers if parsing fails.
+  Rendered by `render_sitrep_html()` (HTML/PDF) and inline in `render_text()`
+  (plain text), positioned **after** the SC/ERC/BI legend paragraph and
+  **before** the daily quote. The box has both `fw-box` and `fw-sitrep-box`
+  CSS classes — the extra class exists solely so the `@media print` block can
+  give it a bigger top margin (`margin-top: 24px !important`) without being
+  clobbered by the generic `.fw-box` print rule's `margin: 0 0 10px
+  !important` (same-specificity longhand-after-shorthand override); don't
+  collapse these two classes back into one without re-checking that the PDF
+  export still shows the extra spacing.
+- Daily quote: `MOTIVATIONAL_QUOTES` (a fixed list of short original lines)
+  and `daily_quote(on_date)` — picks
+  `MOTIVATIONAL_QUOTES[on_date.timetuple().tm_yday % len(MOTIVATIONAL_QUOTES)]`,
+  so it's stable for a given day and rotates daily with no external state.
+  Rendered as the very last element in both `render_html()` and
+  `render_text()` — keep it last if the sitrep box is ever repositioned again.
 
 ## Common tasks
 
@@ -127,6 +155,7 @@ it's wired up by default.
   that area's Fire Danger Operating Plan (Y=timber default, X=chaparral common in SoCal).
 - **Turn off weather columns:** `weather: { enabled: false }`.
 - **Turn off fuel moisture columns:** `fuel_moisture: { enabled: false }`.
+- **Turn off the National Sitrep Summary box:** `national_sitrep: { enabled: false }`.
 - **Change send time:** edit the `cron` hour in `fire-weather-brief.yml`
   (has a `timezone:` field pinned to America/Los_Angeles).
 

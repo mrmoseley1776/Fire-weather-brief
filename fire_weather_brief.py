@@ -30,6 +30,7 @@ import csv
 import datetime as dt
 import io
 import os
+import re
 import smtplib
 import sys
 from dataclasses import dataclass, field
@@ -485,7 +486,8 @@ def collect_movers(gacc_rows) -> list[tuple[str, str, float, float]]:
 # Rendering — HTML
 # --------------------------------------------------------------------------- #
 def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
-                want_weather=True, want_fm=True, logo_src=None) -> str:
+                want_weather=True, want_fm=True, logo_src=None,
+                sitrep=None) -> str:
     def rating_cell(val, station_id, index_key):
         bp = thresholds.get(str(station_id), {}).get(index_key)
         level = classify(val, bp)
@@ -516,6 +518,7 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
         )
 
     sfp_html = render_sfp_html(sfp) if sfp else ""
+    sitrep_html = render_sitrep_html(sitrep) if sitrep else ""
 
     # weather columns
     wx_head = ('<th align="center">Min RH</th><th align="center">Wind</th>'
@@ -603,6 +606,7 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
   .fw-table td, .fw-table th {{ padding: 4px 6px !important; }}
   .fw-gacc-block {{ page-break-inside: avoid; break-inside: avoid; }}
   .fw-box {{ padding: 8px 12px !important; margin: 0 0 10px !important; }}
+  .fw-sitrep-box {{ margin-top: 24px !important; }}
 }}
 </style>
 </head><body style="margin:0;background:#f5f4f0;
@@ -635,6 +639,9 @@ BI = Burning Index (NFDRS daily max).{wx_legend}{fm_legend}
 Sources: USFS FEMS and NWS. Adjective ratings appear only where station
 percentile breakpoints are configured; absolute index values are not directly
 comparable between stations.</p>
+{sitrep_html}
+<p style="font-size:12px;color:#9c7a16;font-style:italic;text-align:center;
+margin:16px 0 0;">{daily_quote(generated.date())}</p>
 </div></div></body></html>"""
 
 
@@ -688,11 +695,47 @@ def render_sfp_html(sfp: dict) -> str:
         f'{inner}{link_html}</div>')
 
 
+def render_sitrep_html(sitrep: dict) -> str:
+    parts = []
+    if sitrep.get("pl") is not None:
+        parts.append(f'National Preparedness Level <b>{sitrep["pl"]}</b>')
+    if sitrep.get("ia_count") is not None:
+        level = sitrep.get("ia_level") or ""
+        parts.append(f'Initial attack {level.lower()} ({sitrep["ia_count"]} fires)')
+    if sitrep.get("new_large") is not None:
+        parts.append(f'{sitrep["new_large"]} new large incidents')
+    if sitrep.get("uncontained") is not None:
+        parts.append(f'{sitrep["uncontained"]} uncontained large fires')
+    if sitrep.get("contained") is not None:
+        parts.append(f'{sitrep["contained"]} contained')
+    if not parts:
+        return ""
+    summary_line = " &middot; ".join(parts)
+
+    gacc_line = ""
+    if sitrep.get("gaccs"):
+        items = " &middot; ".join(
+            f'{g["code"]} PL{g["pl"]} ({g["incidents"]} incidents, {g["acres"]:,} ac)'
+            for g in sitrep["gaccs"])
+        gacc_line = (f'<div style="margin-top:6px;font-size:12px;color:#555;">'
+                     f'<b>Your GACCs:</b> {items}</div>')
+
+    return (
+        '<div class="fw-box fw-sitrep-box" style="background:#faf3df;border:1px solid #d9c48a;'
+        'border-radius:8px;padding:12px 16px;margin:32px 0 0;">'
+        '<div style="font-weight:800;color:#9c7a16;font-size:15px;margin-bottom:6px;">'
+        'National Sitrep Summary</div>'
+        f'<div style="font-size:13px;">{summary_line}</div>{gacc_line}'
+        '<div style="margin-top:6px;font-size:11px;color:#8a8574;">'
+        'Source: NICC Incident Management Situation Report '
+        '(see National Sitrep link above for full detail).</div></div>')
+
+
 # --------------------------------------------------------------------------- #
 # Rendering — plain text
 # --------------------------------------------------------------------------- #
 def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
-                want_fm=True) -> str:
+                want_fm=True, sitrep=None) -> str:
     lines = [f"PRODIGY FIRE WEATHER BRIEF - {generated:%A %B %d, %Y}", ""]
     if ranked[:5]:
         lines.append("HIGHEST FIRE DANGER THIS MORNING")
@@ -753,8 +796,34 @@ def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
                         f"{fmt(l.fm1000 if l else None):>7}")
             lines.append(row)
         lines.append("")
+
     lines.append("SC=Spread Component ERC=Energy Release Component BI=Burning Index")
     lines.append("Sources: USFS FEMS and NWS.")
+    lines.append("")
+
+    if sitrep:
+        parts = []
+        if sitrep.get("pl") is not None:
+            parts.append(f"National Preparedness Level {sitrep['pl']}")
+        if sitrep.get("ia_count") is not None:
+            level = sitrep.get("ia_level") or ""
+            parts.append(f"Initial attack {level.lower()} ({sitrep['ia_count']} fires)")
+        if sitrep.get("new_large") is not None:
+            parts.append(f"{sitrep['new_large']} new large incidents")
+        if sitrep.get("uncontained") is not None:
+            parts.append(f"{sitrep['uncontained']} uncontained large fires")
+        if sitrep.get("contained") is not None:
+            parts.append(f"{sitrep['contained']} contained")
+        if parts:
+            lines.append("NATIONAL SITREP SUMMARY (NICC Incident Management Situation Report)")
+            lines.append("  " + "  |  ".join(parts))
+            if sitrep.get("gaccs"):
+                for g in sitrep["gaccs"]:
+                    lines.append(f"    {g['code']}: PL{g['pl']}  "
+                                 f"{g['incidents']} incidents  {g['acres']:,} ac")
+            lines.append("")
+
+    lines.append(daily_quote(generated.date()))
     return "\n".join(lines)
 
 
@@ -776,6 +845,110 @@ def build_sfp(cfg: dict) -> Optional[dict]:
     except Exception as exc:  # noqa: BLE001
         result["error"] = str(exc)
     return result
+
+
+# --------------------------------------------------------------------------- #
+# National sitrep summary (NICC Incident Management Situation Report)
+# --------------------------------------------------------------------------- #
+SITREP_URL = "https://www.nifc.gov/nicc-files/sitreprt.pdf"
+
+
+def fetch_sitrep_pdf(contact: str = "n/a", timeout: int = 30) -> bytes:
+    headers = {"User-Agent": f"prodigy-fire-weather-brief/1.0 ({contact})"}
+    resp = requests.get(SITREP_URL, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    return resp.content
+
+
+def parse_sitrep_summary(pdf_bytes: bytes, gacc_codes: list[str]) -> Optional[dict]:
+    """Best-effort extraction of headline numbers from page 1 of the daily
+    NICC Incident Management Situation Report. Returns None if the expected
+    text isn't found (e.g. NICC changes the report layout) -- callers should
+    treat that the same as a fetch failure and just skip the summary."""
+    try:
+        import pdfplumber
+    except Exception:  # noqa: BLE001 - optional dependency
+        return None
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            text = pdf.pages[0].extract_text() or ""
+    except Exception:  # noqa: BLE001
+        return None
+
+    def _num(pattern: str):
+        m = re.search(pattern, text)
+        if not m:
+            return None
+        try:
+            return int(m.group(1).replace(",", ""))
+        except Exception:  # noqa: BLE001
+            return None
+
+    result = {
+        "pl": _num(r"National Preparedness Level\s+(\d+)"),
+        "new_large": _num(r"New large incidents:\s*([\d,]+)"),
+        "contained": _num(r"Large fires contained:\s*([\d,]+)"),
+        "uncontained": _num(r"Uncontained large fires:\s*([\d,]+)"),
+        "ia_count": None,
+        "ia_level": None,
+        "gaccs": [],
+    }
+    ia_m = re.search(r"Initial attack activity:\s*([A-Za-z]+)\s*\((\d+)\s*fires\)", text)
+    if ia_m:
+        result["ia_level"], result["ia_count"] = ia_m.group(1), int(ia_m.group(2))
+
+    for code in gacc_codes:
+        row_m = re.search(
+            rf"\b{re.escape(code)}\s+(\d+)\s+(\d+)\s+([\d,]+)\s+\d+\s+\d+\s+\d+\s+[\d,]+\s+-?[\d,]+",
+            text)
+        if row_m:
+            result["gaccs"].append({
+                "code": code,
+                "pl": int(row_m.group(1)),
+                "incidents": int(row_m.group(2)),
+                "acres": int(row_m.group(3).replace(",", "")),
+            })
+
+    # If none of the expected fields were found, the report layout likely
+    # changed -- signal failure rather than rendering an empty-looking box.
+    if result["pl"] is None and not result["gaccs"]:
+        return None
+    return result
+
+
+def build_sitrep_summary(cfg: dict, gacc_codes: list[str]) -> Optional[dict]:
+    sc = cfg.get("national_sitrep", {})
+    if not sc.get("enabled", True):
+        return None
+    contact = (cfg.get("significant_fire_potential", {}).get("contact_email")
+               or cfg.get("email", {}).get("from_addr", "n/a"))
+    try:
+        pdf_bytes = fetch_sitrep_pdf(contact)
+        return parse_sitrep_summary(pdf_bytes, gacc_codes)
+    except Exception:  # noqa: BLE001 - never block the brief over this
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Motivational quote (rotates daily, purely for the brief's closing line)
+# --------------------------------------------------------------------------- #
+MOTIVATIONAL_QUOTES = [
+    "Preparedness today is containment tomorrow.",
+    "The best fire season is the one nobody has to talk about.",
+    "Every acre saved starts with the call made before the smoke.",
+    "Readiness isn't a season -- it's a standard.",
+    "The data doesn't fight fire. The people who trust it do.",
+    "Know the fuels. Know the wind. Know your customer's risk.",
+    "A quiet dispatch desk is the result of loud preparation.",
+    "Fire danger doesn't wait for a good time to show up. Neither should we.",
+    "The best briefing is the one that changes a decision.",
+    "Complacency is the only fuel model that's always available.",
+]
+
+
+def daily_quote(on_date: dt.date) -> str:
+    idx = on_date.timetuple().tm_yday % len(MOTIVATIONAL_QUOTES)
+    return MOTIVATIONAL_QUOTES[idx]
 
 
 # --------------------------------------------------------------------------- #
@@ -910,6 +1083,7 @@ def main() -> int:
 
     gacc_rows, ranked = build_gacc_reports(gaccs, dataset, want_weather)
     sfp = build_sfp(cfg)
+    sitrep = build_sitrep_summary(cfg, [g.code for g, _ in gacc_rows])
 
     logo_path = Path(__file__).resolve().parent / "assets" / "logo.png"
     logo_bytes = logo_path.read_bytes() if logo_path.exists() else None
@@ -919,10 +1093,10 @@ def main() -> int:
         logo_preview_src = "data:image/png;base64," + base64.b64encode(logo_bytes).decode()
         logo_email_src = "cid:logo"
 
-    text = render_text(gacc_rows, ranked, now, sfp, want_weather, want_fm)
+    text = render_text(gacc_rows, ranked, now, sfp, want_weather, want_fm, sitrep=sitrep)
     preview_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
                                want_weather, want_fm,
-                               logo_src=logo_preview_src)
+                               logo_src=logo_preview_src, sitrep=sitrep)
 
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(preview_html)
@@ -938,7 +1112,7 @@ def main() -> int:
 
     email_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
                              want_weather, want_fm,
-                             logo_src=logo_email_src)
+                             logo_src=logo_email_src, sitrep=sitrep)
     inline_images = {}
     if logo_bytes:
         inline_images["logo"] = logo_bytes

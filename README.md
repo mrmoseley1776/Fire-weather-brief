@@ -189,6 +189,20 @@ Both degrade gracefully: if the alert feed is briefly unreachable, the brief
 still sends with the fire danger tables and outlook links, noting the feed was
 unavailable.
 
+**National Sitrep Summary box.** Below the SC/ERC/BI legend, a gold summary
+box pulls the headline numbers off page 1 of the same daily NICC Incident
+Management Situation Report PDF linked above (parsed with `pdfplumber`):
+National Preparedness Level, initial attack activity, new/contained/
+uncontained large fires, and a one-line PL / incident count / cumulative
+acres readout for each of your configured GACCs. Turn it off with
+`national_sitrep: { enabled: false }` in `config.yaml`. Best-effort: if NICC
+changes the report's layout, this box is silently skipped — the National
+Sitrep link itself still works either way.
+
+**Daily quote.** A short motivational line appears at the very bottom of the
+brief, picked deterministically from a fixed list so it's stable for the day
+but rotates day to day. Cosmetic only — no config toggle.
+
 
 ---
 
