@@ -21,6 +21,8 @@ windows — which is exactly what this tool uses.
 - **BI trend** vs. the prior day and the **7-day forecast peak BI** per station.
 - Optional **Low → Extreme** color chips where you supply station percentile
   breakpoints (see `thresholds` in `config.yaml`).
+- **Evacuation Orders** — active NWS evacuation alerts, with fire name/evacuee
+  count when the alert states them (see below).
 
 ---
 
@@ -195,6 +197,31 @@ NFDRS, so it isn't (and can't be) included.
 Both degrade gracefully: if the alert feed is briefly unreachable, the brief
 still sends with the fire danger tables and outlook links, noting the feed was
 unavailable.
+
+**Evacuation Orders box.** Right above Significant Fire Potential, a red box
+shows active evacuation-order alerts (`Evacuation Immediate` / `Civil
+Emergency Message`) for the same states, from the same `api.weather.gov` feed.
+Turn it off with `evacuation_orders: { enabled: false }`. Each alert shows the
+affected **area** (NWS alert zones are usually county-level, not exact city
+names) plus, **only when the issuing agency's alert text explicitly states
+them**, the **fire name** and an **evacuee/structure count**. Most evacuation
+alerts don't include a headcount at all — that's a real gap in the source
+alert, not a bug here, so don't expect it to be populated every time. There's
+no free public feed with structured city/fire-name/headcount fields (tools
+like Genasys Protect/Zonehaven exist but aren't open APIs), so this is the
+best available free/keyless signal. Degrades the same way as the alerts above:
+a feed hiccup just shows "feed unavailable" without blocking the rest of the
+brief, and most mornings this box will simply read "No active evacuation
+orders" (a good thing, not a broken feature).
+
+**Live updates.** This box alone refreshes itself every time the page is
+opened or reloaded — it fetches the latest NWS alerts directly in your
+browser, so it's never more than page-load-fresh, not just once-a-day-fresh
+like the rest of the brief. A small "live as of HH:MM" note appears once that
+refresh completes. If the live check fails for any reason (offline, feed
+hiccup), the box just keeps showing the snapshot from that morning's build —
+nothing breaks either way. (Every other section still only updates on the
+daily 6 AM build.)
 
 **National Sitrep Summary box.** Below the SC/ERC/BI legend, a gold summary
 box pulls the headline numbers off page 1 of the same daily NICC Incident

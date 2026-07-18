@@ -68,6 +68,13 @@ it's wired up by default.
   in code to `event in {"Red Flag Warning","Fire Weather Watch"}`. NWS requires a
   descriptive `User-Agent` with a contact; the tool builds it from
   `significant_fire_potential.contact_email`.
+- NWS evacuation alerts: same endpoint/params as above, filtered instead to
+  `event in {"Evacuation Immediate","Civil Emergency Message"}`
+  (`EVAC_ALERT_EVENTS`) — issued by local emergency management via IPAWS, not
+  a dedicated evacuation feed. Fetched as a separate request
+  (`fetch_evacuation_alerts()`) rather than reusing `fetch_fire_alerts()`'s
+  response, so this box degrades independently if one call fails but not the
+  other.
 
 ## Key implementation notes
 
@@ -116,6 +123,39 @@ it's wired up by default.
   not `alternative`).
 - Everything degrades gracefully: a failed weather fetch, alert fetch, or PDF
   render never blocks the core danger tables / email from sending.
+- Evacuation Orders box: `build_evacuations()` reuses
+  `significant_fire_potential.states`/`contact_email` (same monitored
+  footprint) but is toggled independently via `evacuation_orders.enabled`.
+  Rendered by `render_evac_html()`/inline in `render_text()`, positioned
+  right after the "Highest fire danger" box and before Significant Fire
+  Potential — evacuations are the most acute/actionable signal, so they lead.
+  `_extract_fire_name()`/`_extract_headcount()` are regex best-effort scans of
+  each alert's headline+description text (`_FIRE_NAME_RE`/`_HEADCOUNT_RE`);
+  both are commonly `None` since neither is a structured CAP field — never
+  backfill/guess either one, a blank field means the alert didn't state it,
+  not that parsing failed. No free public feed has structured city/fire-name/
+  evacuee-count data (Genasys Protect/Zonehaven etc. aren't open APIs), so
+  this NWS-alert-text scan is the best available free/keyless source.
+- Evacuation Orders live refresh: unlike every other box (which only updates
+  on the once-daily GitHub Actions build), the Evacuation Orders box also
+  refreshes itself client-side on every page load, since evacuation status is
+  the most time-critical signal in the brief. `render_evac_html()` appends a
+  `<script>` block (`_EVAC_LIVE_SCRIPT_TEMPLATE`, with a `__STATES_JSON__`
+  placeholder substituted via `json.dumps(states)`) that independently
+  `fetch()`es `api.weather.gov/alerts/active` straight from the browser —
+  confirmed viable via `curl -I -H "Origin: ..." ".../alerts/active?area=CA"`
+  returning `access-control-allow-origin: *`. The JS is a hand-mirrored port
+  of `fetch_evacuation_alerts()`/`_extract_fire_name()`/`_extract_headcount()`
+  (same event filter, same regexes) — keep the two in sync if either changes.
+  On success it replaces `#fw-evac-body`'s innerHTML and shows a "live as of
+  HH:MM" badge (`#fw-evac-live-badge`); on failure (offline, CORS hiccup, JS
+  disabled) it silently no-ops and leaves the server-rendered snapshot from
+  the last daily build in place — same degrade-gracefully pattern as
+  everything else. Browsers don't let `fetch()` set a custom `User-Agent`, so
+  unlike the Python side this relies on NWS not strictly requiring one for
+  browser-originated requests. Deliberately scoped to this box only, not
+  Significant Fire Potential (Red Flag Warning/Fire Weather Watch) — the
+  once-a-day refresh is considered sufficient there.
 - National Sitrep Summary box: `fetch_sitrep_pdf()` downloads the same NICC
   sitrep PDF linked in `predictive_services_links` (`SITREP_URL`), and
   `parse_sitrep_summary()` uses `pdfplumber` to regex-extract page-1 headline
@@ -167,6 +207,7 @@ it's wired up by default.
 - **Turn off weather columns:** `weather: { enabled: false }`.
 - **Turn off fuel moisture columns:** `fuel_moisture: { enabled: false }`.
 - **Turn off the National Sitrep Summary box:** `national_sitrep: { enabled: false }`.
+- **Turn off the Evacuation Orders box:** `evacuation_orders: { enabled: false }`.
 - **Enable rich link previews:** set `site.public_url` to the GitHub Pages URL.
 - **Change send time:** edit the `cron` hour in `fire-weather-brief.yml`
   (has a `timezone:` field pinned to America/Los_Angeles).
