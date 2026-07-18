@@ -117,6 +117,20 @@ email path still works:
    Secrets and variables → Actions**, then change the workflow's build step to
    run `python fire_weather_brief.py` instead of the `--dry-run` + Pages steps.
 
+**PDF attachment.** When sending by email (not `--dry-run`), the brief is also
+rendered to a PDF and attached (`fire_weather_brief_YYYY-MM-DD.pdf`), using a
+headless Chromium via [Playwright](https://playwright.dev/python/) — no
+Homebrew or system libraries required, just a one-time browser download:
+```bash
+pip install -r requirements.txt        # installs the playwright package
+playwright install chromium            # one-time: downloads the headless browser
+```
+This is best-effort: if Playwright or its browser isn't installed, the email
+still sends fine, just without the PDF attachment (a note prints to the
+console). If you switch GitHub Actions from the default dry-run+Pages flow to
+actually emailing, add a `playwright install --with-deps chromium` step to the
+workflow before the build step so the PDF attaches there too.
+
 ---
 
 ## Field reference

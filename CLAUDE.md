@@ -16,7 +16,7 @@ then renders an HTML/plain-text email and sends it. Recipient:
 
 - `fire_weather_brief.py` — the whole program (fetch, parse, render, email, chart).
 - `config.yaml` — all user settings. **This is the only file the user normally edits.**
-- `requirements.txt` — `requests`, `PyYAML`.
+- `requirements.txt` — `requests`, `PyYAML`, `playwright` (PDF export, optional at runtime).
 - `.github/workflows/fire-weather-brief.yml` — daily 6 AM Pacific run (GitHub Actions).
 - `.github/workflows/keepalive.yml` — weekly commit so the schedule isn't auto-disabled after 60 days.
 - `README.md` — full setup, scheduling, and field reference for the user.
@@ -100,8 +100,20 @@ it's wired up by default.
 - Logo: `assets/logo.png` (recolored so its text is white, for the current
   black header) is embedded the same way — CID in email, data-URI in preview —
   via `logo_bytes`/`logo_preview_src`/`logo_email_src` in `main()`.
-- Everything degrades gracefully: a failed weather fetch or alert fetch never
-  blocks the core danger tables from sending.
+- PDF attachment: `render_pdf()` uses Playwright's headless Chromium (chosen
+  over WeasyPrint since it needs no system Pango/Cairo libraries, just
+  `playwright install chromium`) to render `preview_html` — the base64-data-URI
+  version, not `email_html`, since a standalone browser page can't resolve
+  `cid:` references — to PDF bytes, only when actually emailing (never during
+  `--dry-run`). It's wrapped in try/except and returns `None` on any failure
+  (missing package, missing browser binary, render error), so a missing/broken
+  Playwright install never blocks the email from sending — it just sends
+  without the attachment and prints a console note. `send_email()`'s
+  `pdf_bytes`/`pdf_filename` params wrap the existing `alternative`/`related`
+  body in an outer `mixed` MIME container (attachments must live in `mixed`,
+  not `alternative`).
+- Everything degrades gracefully: a failed weather fetch, alert fetch, or PDF
+  render never blocks the core danger tables / email from sending.
 
 ## Common tasks
 

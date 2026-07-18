@@ -507,8 +507,9 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
             for g, r in top
         )
         top_html = (
-            '<div style="background:#faf3df;border-left:4px solid #B18C19;'
-            'padding:10px 14px;margin:0 0 18px;">'
+            '<div class="fw-box" style="background:#faf3df;border-left:4px solid #B18C19;'
+            'padding:10px 14px;margin:0 0 18px;'
+            'page-break-inside:avoid;break-inside:avoid;">'
             '<div style="font-weight:700;color:#9c7a16;margin-bottom:4px;">'
             'Highest fire danger this morning</div>'
             f'<ul style="margin:4px 0 0 18px;padding:0;">{items}</ul></div>'
@@ -565,7 +566,7 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
                 f'<td align="center" style="font-size:12px;color:#555;">{peak}</td>'
                 f'{wx_cells}{fm_cells}</tr>')
         table = (
-            '<table cellspacing="0" cellpadding="7" '
+            '<table class="fw-table" cellspacing="0" cellpadding="7" '
             'style="border-collapse:collapse;width:100%;font-size:13px;">'
             '<thead><tr style="background:#15171c;color:#fff;text-align:left;">'
             '<th>Station</th><th align="center">SC</th><th align="center">ERC</th>'
@@ -573,10 +574,11 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
             f'<th align="center">7d peak</th>{wx_head}{fm_head}</tr></thead>'
             f'<tbody>{"".join(tr)}</tbody></table>')
         blocks.append(
-            f'<h3 style="margin:22px 0 6px;color:#15171c;border-bottom:2px solid '
+            '<div class="fw-gacc-block" style="page-break-inside:avoid;break-inside:avoid;">'
+            f'<h3 class="fw-h3" style="margin:22px 0 6px;color:#15171c;border-bottom:2px solid '
             f'#B18C19;padding-bottom:4px;">{g.name} '
             f'<span style="color:#8a8574;font-weight:400;font-size:13px;">'
-            f'({g.code} &middot; fuel model {g.fuel_models})</span></h3>{table}')
+            f'({g.code} &middot; fuel model {g.fuel_models})</span></h3>{table}</div>')
 
     logo_html = (f'<img src="{logo_src}" alt="Prodigy Wildfire Solutions" '
                  'style="height:64px;width:auto;display:block;">'
@@ -588,7 +590,22 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
     fm_legend = (" &middot; 100-hr/1000-hr FM = dead fuel moisture (%), how much "
                  "water is in medium/large dead fuel &mdash; lower = drier = more "
                  "available to burn." if want_fm else "")
-    return f"""<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f5f4f0;
+    return f"""<!doctype html><html><head><meta charset="utf-8">
+<style>
+/* Only affects printing / PDF export (Playwright emulates print media for
+   render_pdf()) -- has no effect on screen preview or email clients, which
+   ignore @media print. Tightens vertical spacing so the page-break-inside:avoid
+   rule on .fw-gacc-block leaves less unused space at the bottom of a page. */
+@media print {{
+  body {{ padding: 10px !important; }}
+  .fw-h3 {{ margin: 12px 0 4px !important; font-size: 15px !important; }}
+  .fw-table {{ font-size: 11px !important; }}
+  .fw-table td, .fw-table th {{ padding: 4px 6px !important; }}
+  .fw-gacc-block {{ page-break-inside: avoid; break-inside: avoid; }}
+  .fw-box {{ padding: 8px 12px !important; margin: 0 0 10px !important; }}
+}}
+</style>
+</head><body style="margin:0;background:#f5f4f0;
 padding:20px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
 color:#15171c;">
 <div style="max-width:820px;margin:0 auto;background:#fff;border-radius:10px;
@@ -664,7 +681,7 @@ def render_sfp_html(sfp: dict) -> str:
                          for l in links) + '</div>')
 
     return (
-        '<div style="background:#faf3df;border:1px solid #d9c48a;border-radius:8px;'
+        '<div class="fw-box" style="background:#faf3df;border:1px solid #d9c48a;border-radius:8px;'
         'padding:12px 16px;margin:0 0 18px;">'
         '<div style="font-weight:800;color:#9c7a16;font-size:15px;margin-bottom:6px;">'
         'Significant Fire Potential</div>'
@@ -762,11 +779,44 @@ def build_sfp(cfg: dict) -> Optional[dict]:
 
 
 # --------------------------------------------------------------------------- #
+# PDF
+# --------------------------------------------------------------------------- #
+
+def render_pdf(html: str) -> Optional[bytes]:
+    """Render the brief HTML (with base64-embedded images, not CID references)
+    to PDF bytes using a headless Chromium via Playwright. Returns None if
+    Playwright -- or its bundled Chromium browser -- isn't installed; the email
+    still sends fine without a PDF attachment in that case."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception:  # noqa: BLE001 - optional dependency
+        return None
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            page.set_content(html, wait_until="networkidle")
+            page.emulate_media(media="print")
+            pdf_bytes = page.pdf(
+                format="Letter",
+                print_background=True,
+                margin={"top": "0.4in", "bottom": "0.4in",
+                        "left": "0.4in", "right": "0.4in"},
+            )
+            browser.close()
+            return pdf_bytes
+    except Exception:  # noqa: BLE001 - never block the email over a PDF failure
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # Email
 # --------------------------------------------------------------------------- #
 def send_email(cfg: dict, subject: str, html: str, text: str,
                image_bytes: Optional[bytes] = None, image_cid: str = "trend",
-               inline_images: Optional[dict] = None) -> None:
+               inline_images: Optional[dict] = None,
+               pdf_bytes: Optional[bytes] = None,
+               pdf_filename: str = "fire_weather_brief.pdf") -> None:
     ec = cfg["email"]
     pw = os.environ.get(ec.get("smtp_password_env", "FEMS_SMTP_PASSWORD"), "")
     if not pw:
@@ -787,16 +837,30 @@ def send_email(cfg: dict, subject: str, html: str, text: str,
 
     if images:
         from email.mime.image import MIMEImage
-        root = MIMEMultipart("related")
-        root.attach(alt)
+        related = MIMEMultipart("related")
+        related.attach(alt)
         for cid, data in images.items():
             img = MIMEImage(data, _subtype="png")
             img.add_header("Content-ID", f"<{cid}>")
             img.add_header("Content-Disposition", "inline", filename=f"{cid}.png")
-            root.attach(img)
-        msg = root
+            related.attach(img)
+        body = related
     else:
-        msg = alt
+        body = alt
+
+    # A real file attachment (the PDF) has to live in a "mixed" container
+    # wrapped around the alternative/related body -- attaching it directly to
+    # an "alternative" part isn't valid per the MIME spec.
+    if pdf_bytes:
+        from email.mime.application import MIMEApplication
+        mixed = MIMEMultipart("mixed")
+        mixed.attach(body)
+        pdf_part = MIMEApplication(pdf_bytes, _subtype="pdf")
+        pdf_part.add_header("Content-Disposition", "attachment", filename=pdf_filename)
+        mixed.attach(pdf_part)
+        msg = mixed
+    else:
+        msg = body
 
     msg["Subject"] = subject
     msg["From"] = ec["from_addr"]
@@ -878,7 +942,14 @@ def main() -> int:
     inline_images = {}
     if logo_bytes:
         inline_images["logo"] = logo_bytes
-    send_email(cfg, subject, email_html, text, inline_images=inline_images)
+
+    pdf_bytes = render_pdf(preview_html)
+    if pdf_bytes is None:
+        print("Note: PDF attachment skipped (Playwright/Chromium not available).")
+    pdf_filename = f"fire_weather_brief_{now:%Y-%m-%d}.pdf"
+
+    send_email(cfg, subject, email_html, text, inline_images=inline_images,
+               pdf_bytes=pdf_bytes, pdf_filename=pdf_filename)
     print(f"Email sent to: {', '.join(cfg['email']['to_addrs'])}")
     return 0
 
