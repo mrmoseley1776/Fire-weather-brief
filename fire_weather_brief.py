@@ -629,7 +629,7 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
     wx_legend = (" &middot; Min RH = daily minimum relative humidity &middot; "
                  "Wind/Gust = daily max mph. Red = RH&le;15% or wind&ge;25 mph."
                  if want_weather else "")
-    return f"""<!doctype html><html><body style="margin:0;background:#eceff1;
+    return f"""<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#eceff1;
 padding:20px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
 color:#263238;">
 <div style="max-width:820px;margin:0 auto;background:#fff;border-radius:10px;
