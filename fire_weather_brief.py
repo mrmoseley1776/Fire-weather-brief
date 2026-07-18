@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
 import csv
 import datetime as dt
 import io
@@ -34,6 +35,7 @@ import sys
 from dataclasses import dataclass, field
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from pathlib import Path
 from typing import Optional
 
 import requests
@@ -522,7 +524,7 @@ def build_trend_chart(gacc_rows) -> Optional[bytes]:
     ax.set_xlabel("\u2190 easing        Burning Index change vs. yesterday        "
                   "worsening \u2192", fontsize=9)
     ax.set_title("Fire danger: current risk (top = highest) & overnight movement",
-                 fontsize=12, fontweight="bold", loc="left", color="#bf360c")
+                 fontsize=12, fontweight="bold", loc="left", color="#E8590C")
     mx = max(5.0, max(abs(d) for d in deltas))
     ax.set_xlim(-mx * 1.35, mx * 1.35)
     for i, d in enumerate(deltas):
@@ -545,7 +547,7 @@ def build_trend_chart(gacc_rows) -> Optional[bytes]:
 # Rendering — HTML
 # --------------------------------------------------------------------------- #
 def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
-                want_weather=True, chart_src=None, want_fm=True) -> str:
+                want_weather=True, chart_src=None, want_fm=True, logo_src=None) -> str:
     def rating_cell(val, station_id, index_key):
         bp = thresholds.get(str(station_id), {}).get(index_key)
         level = classify(val, bp)
@@ -567,9 +569,9 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
             for g, r in top
         )
         top_html = (
-            '<div style="background:#fff3e0;border-left:4px solid #ef6c00;'
+            '<div style="background:#faf3df;border-left:4px solid #B18C19;'
             'padding:10px 14px;margin:0 0 18px;">'
-            '<div style="font-weight:700;color:#e65100;margin-bottom:4px;">'
+            '<div style="font-weight:700;color:#9c7a16;margin-bottom:4px;">'
             'Highest fire danger this morning</div>'
             f'<ul style="margin:4px 0 0 18px;padding:0;">{items}</ul></div>'
         )
@@ -579,7 +581,7 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
     chart_html = ""
     if chart_src:
         chart_html = (
-            '<div style="border:1px solid #ffccbc;border-radius:8px;padding:10px 12px;'
+            '<div style="border:1px solid #e8c9a0;border-radius:8px;padding:10px 12px;'
             'margin:0 0 18px;text-align:center;">'
             f'<img src="{chart_src}" alt="Burning Index change vs. yesterday" '
             'style="max-width:100%;height:auto;" width="720"></div>')
@@ -635,17 +637,20 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
         table = (
             '<table cellspacing="0" cellpadding="7" '
             'style="border-collapse:collapse;width:100%;font-size:13px;">'
-            '<thead><tr style="background:#263238;color:#fff;text-align:left;">'
+            '<thead><tr style="background:#15171c;color:#fff;text-align:left;">'
             '<th>Station</th><th align="center">SC</th><th align="center">ERC</th>'
             '<th align="center">BI</th><th align="center">BI &Delta;</th>'
             f'<th align="center">7d peak</th>{wx_head}{fm_head}</tr></thead>'
             f'<tbody>{"".join(tr)}</tbody></table>')
         blocks.append(
-            f'<h3 style="margin:22px 0 6px;color:#263238;border-bottom:2px solid '
-            f'#cfd8dc;padding-bottom:4px;">{g.name} '
-            f'<span style="color:#78909c;font-weight:400;font-size:13px;">'
+            f'<h3 style="margin:22px 0 6px;color:#15171c;border-bottom:2px solid '
+            f'#B18C19;padding-bottom:4px;">{g.name} '
+            f'<span style="color:#8a8574;font-weight:400;font-size:13px;">'
             f'({g.code} &middot; fuel model {g.fuel_models})</span></h3>{table}')
 
+    logo_html = (f'<img src="{logo_src}" alt="Prodigy Wildfire Solutions" '
+                 'style="height:64px;width:auto;display:block;">'
+                 if logo_src else "")
     stamp = generated.strftime("%A, %B %d, %Y")
     wx_legend = (" &middot; Min RH = daily minimum relative humidity &middot; "
                  "Wind/Gust = daily max mph. Red = RH&le;15% or wind&ge;25 mph."
@@ -653,22 +658,32 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
     fm_legend = (" &middot; 100-hr/1000-hr FM = dead fuel moisture (%), how much "
                  "water is in medium/large dead fuel &mdash; lower = drier = more "
                  "available to burn." if want_fm else "")
-    return f"""<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#eceff1;
+    return f"""<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f5f4f0;
 padding:20px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
-color:#263238;">
+color:#15171c;">
 <div style="max-width:820px;margin:0 auto;background:#fff;border-radius:10px;
 overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.15);">
-<div style="background:linear-gradient(135deg,#bf360c,#e65100);color:#fff;
-padding:20px 24px;">
+<div style="background:#15171c;color:#fff;
+padding:16px 24px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+<tr>
+<td style="vertical-align:middle;">
 <div style="font-size:20px;font-weight:800;letter-spacing:.3px;">
 Prodigy Fire Weather Brief</div>
-<div style="opacity:.9;font-size:13px;margin-top:2px;">{stamp}</div></div>
+<div style="opacity:.9;font-size:13px;margin-top:2px;">{stamp}</div>
+</td>
+<td style="vertical-align:middle;text-align:right;width:1%;white-space:nowrap;padding-left:16px;">
+{logo_html}
+</td>
+</tr>
+</table>
+</div>
 <div style="padding:20px 24px;">
 {top_html}
 {sfp_html}
 {chart_html}
 {''.join(blocks)}
-<p style="font-size:11px;color:#90a4ae;margin-top:24px;line-height:1.5;">
+<p style="font-size:11px;color:#8a8574;margin-top:24px;line-height:1.5;">
 SC = Spread Component &middot; ERC = Energy Release Component &middot;
 BI = Burning Index (NFDRS daily max).{wx_legend}{fm_legend}
 Sources: USFS FEMS and NWS. Adjective ratings appear only where station
@@ -720,9 +735,9 @@ def render_sfp_html(sfp: dict) -> str:
                          for l in links) + '</div>')
 
     return (
-        '<div style="background:#fbe9e7;border:1px solid #ffab91;border-radius:8px;'
+        '<div style="background:#faf3df;border:1px solid #d9c48a;border-radius:8px;'
         'padding:12px 16px;margin:0 0 18px;">'
-        '<div style="font-weight:800;color:#bf360c;font-size:15px;margin-bottom:6px;">'
+        '<div style="font-weight:800;color:#9c7a16;font-size:15px;margin-bottom:6px;">'
         'Significant Fire Potential</div>'
         f'{inner}{link_html}</div>')
 
@@ -821,7 +836,8 @@ def build_sfp(cfg: dict) -> Optional[dict]:
 # Email
 # --------------------------------------------------------------------------- #
 def send_email(cfg: dict, subject: str, html: str, text: str,
-               image_bytes: Optional[bytes] = None, image_cid: str = "trend") -> None:
+               image_bytes: Optional[bytes] = None, image_cid: str = "trend",
+               inline_images: Optional[dict] = None) -> None:
     ec = cfg["email"]
     pw = os.environ.get(ec.get("smtp_password_env", "FEMS_SMTP_PASSWORD"), "")
     if not pw:
@@ -835,14 +851,20 @@ def send_email(cfg: dict, subject: str, html: str, text: str,
     alt.attach(MIMEText(text, "plain"))
     alt.attach(MIMEText(html, "html"))
 
+    # Merge the legacy single-image args with the new multi-image dict.
+    images = dict(inline_images or {})
     if image_bytes:
+        images.setdefault(image_cid, image_bytes)
+
+    if images:
         from email.mime.image import MIMEImage
         root = MIMEMultipart("related")
         root.attach(alt)
-        img = MIMEImage(image_bytes, _subtype="png")
-        img.add_header("Content-ID", f"<{image_cid}>")
-        img.add_header("Content-Disposition", "inline", filename="fire_trend.png")
-        root.attach(img)
+        for cid, data in images.items():
+            img = MIMEImage(data, _subtype="png")
+            img.add_header("Content-ID", f"<{cid}>")
+            img.add_header("Content-Disposition", "inline", filename=f"{cid}.png")
+            root.attach(img)
         msg = root
     else:
         msg = alt
@@ -897,16 +919,24 @@ def main() -> int:
     sfp = build_sfp(cfg)
 
     chart_bytes = build_trend_chart(gacc_rows)
-    preview_src = None
-    email_src = None
+    chart_preview_src = None
+    chart_email_src = None
     if chart_bytes:
-        import base64
-        preview_src = "data:image/png;base64," + base64.b64encode(chart_bytes).decode()
-        email_src = "cid:trend"
+        chart_preview_src = "data:image/png;base64," + base64.b64encode(chart_bytes).decode()
+        chart_email_src = "cid:trend"
+
+    logo_path = Path(__file__).resolve().parent / "assets" / "logo.png"
+    logo_bytes = logo_path.read_bytes() if logo_path.exists() else None
+    logo_preview_src = None
+    logo_email_src = None
+    if logo_bytes:
+        logo_preview_src = "data:image/png;base64," + base64.b64encode(logo_bytes).decode()
+        logo_email_src = "cid:logo"
 
     text = render_text(gacc_rows, ranked, now, sfp, want_weather, want_fm)
     preview_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
-                               want_weather, preview_src, want_fm)
+                               want_weather, chart_preview_src, want_fm,
+                               logo_src=logo_preview_src)
 
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(preview_html)
@@ -921,8 +951,14 @@ def main() -> int:
         return 0
 
     email_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
-                             want_weather, email_src, want_fm)
-    send_email(cfg, subject, email_html, text, image_bytes=chart_bytes)
+                             want_weather, chart_email_src, want_fm,
+                             logo_src=logo_email_src)
+    inline_images = {}
+    if chart_bytes:
+        inline_images["trend"] = chart_bytes
+    if logo_bytes:
+        inline_images["logo"] = logo_bytes
+    send_email(cfg, subject, email_html, text, inline_images=inline_images)
     print(f"Email sent to: {', '.join(cfg['email']['to_addrs'])}")
     return 0
 
