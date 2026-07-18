@@ -61,6 +61,13 @@ included GitHub Actions workflow) publishes it to **GitHub Pages**, so you get
 a bookmarkable link instead of an inbox — no SMTP account, app password, or
 secrets to configure.
 
+**Rich link previews (iMessage, Slack, etc.).** Set `site.public_url` in
+`config.yaml` to your GitHub Pages URL (`https://<username>.github.io/<repo>/`)
+and shared links show a title + description + logo card instead of a plain
+link. Leave it blank to skip — nothing guesses the URL for you. The workflow
+already copies `assets/logo.png` next to `index.html` so the preview image
+resolves.
+
 ## 4. Test it
 
 ```bash

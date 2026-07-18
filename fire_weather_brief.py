@@ -487,7 +487,7 @@ def collect_movers(gacc_rows) -> list[tuple[str, str, float, float]]:
 # --------------------------------------------------------------------------- #
 def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
                 want_weather=True, want_fm=True, logo_src=None,
-                sitrep=None) -> str:
+                sitrep=None, public_url=None) -> str:
     def rating_cell(val, station_id, index_key):
         bp = thresholds.get(str(station_id), {}).get(index_key)
         level = classify(val, bp)
@@ -593,7 +593,37 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
     fm_legend = (" &middot; 100-hr/1000-hr FM = dead fuel moisture (%), how much "
                  "water is in medium/large dead fuel &mdash; lower = drier = more "
                  "available to burn." if want_fm else "")
+
+    # <title> + Open Graph / Twitter Card tags. These are what iMessage, Slack,
+    # etc. read to build a rich link preview when the published brief.html URL
+    # is shared -- without them the link shows as plain text. og:image needs an
+    # absolute URL (data: URIs are not supported by link-preview crawlers), so
+    # this only activates when `site.public_url` is set in config.yaml (the
+    # GitHub Actions workflow also copies assets/logo.png next to index.html so
+    # `{public_url}/logo.png` resolves). No public_url configured -> just a
+    # plain <title>, no preview image/description (never guess a URL).
+    page_title = f"Prodigy Fire Weather Brief — {stamp}"
+    if public_url:
+        base = public_url.rstrip("/") + "/"
+        img_url = base + "logo.png"
+        og_desc = ("Daily NFDRS fire danger and significant fire potential "
+                   "briefing for the West Coast and Rockies.")
+        head_meta = (
+            f'<title>{page_title}</title>'
+            f'<meta property="og:title" content="{page_title}">'
+            f'<meta property="og:description" content="{og_desc}">'
+            f'<meta property="og:type" content="website">'
+            f'<meta property="og:url" content="{base}">'
+            f'<meta property="og:image" content="{img_url}">'
+            f'<meta name="twitter:card" content="summary_large_image">'
+            f'<meta name="twitter:title" content="{page_title}">'
+            f'<meta name="twitter:description" content="{og_desc}">'
+            f'<meta name="twitter:image" content="{img_url}">')
+    else:
+        head_meta = f'<title>{page_title}</title>'
+
     return f"""<!doctype html><html><head><meta charset="utf-8">
+{head_meta}
 <style>
 /* Only affects printing / PDF export (Playwright emulates print media for
    render_pdf()) -- has no effect on screen preview or email clients, which
@@ -1084,6 +1114,7 @@ def main() -> int:
     gacc_rows, ranked = build_gacc_reports(gaccs, dataset, want_weather)
     sfp = build_sfp(cfg)
     sitrep = build_sitrep_summary(cfg, [g.code for g, _ in gacc_rows])
+    public_url = cfg.get("site", {}).get("public_url")
 
     logo_path = Path(__file__).resolve().parent / "assets" / "logo.png"
     logo_bytes = logo_path.read_bytes() if logo_path.exists() else None
@@ -1096,7 +1127,8 @@ def main() -> int:
     text = render_text(gacc_rows, ranked, now, sfp, want_weather, want_fm, sitrep=sitrep)
     preview_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
                                want_weather, want_fm,
-                               logo_src=logo_preview_src, sitrep=sitrep)
+                               logo_src=logo_preview_src, sitrep=sitrep,
+                               public_url=public_url)
 
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(preview_html)

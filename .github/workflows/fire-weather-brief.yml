@@ -44,6 +44,10 @@ jobs:
           python fire_weather_brief.py --dry-run --out brief.html
           mkdir -p public
           cp brief.html public/index.html
+          # Published next to index.html so config.yaml's site.public_url +
+          # "logo.png" resolves -- lets link previews (iMessage, Slack, etc.)
+          # show the logo via the og:image tag in brief.html's <head>.
+          if [ -f assets/logo.png ]; then cp assets/logo.png public/logo.png; fi
       - uses: actions/upload-pages-artifact@v3
         with:
           path: public

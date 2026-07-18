@@ -21,6 +21,14 @@ email:
     - michael@prodigywildfire.com
   subject_prefix: "Prodigy Fire Weather Brief"
 
+# The URL the brief gets published to (GitHub Pages, by default
+# https://<your-github-username>.github.io/<repo-name>/). Only used to build
+# the <title> + Open Graph / Twitter Card tags so links shared in iMessage,
+# Slack, etc. show a rich preview (title + logo) instead of a plain link.
+# Leave blank to skip preview tags entirely -- never guessed automatically.
+site:
+  public_url: "https://mrmoseley1776.github.io/Fire-weather-brief/"
+
 data:
   dataset: all               # observation | forecast | all (obs + 7-day forecast)
   fuel_models_default: Y      # NFDRS2016 fuel model (V/W/X/Y/Z)

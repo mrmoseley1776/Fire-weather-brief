@@ -136,6 +136,17 @@ it's wired up by default.
   !important` (same-specificity longhand-after-shorthand override); don't
   collapse these two classes back into one without re-checking that the PDF
   export still shows the extra spacing.
+- Link previews: `render_html()`'s `public_url` param (sourced from
+  `site.public_url` in config.yaml, `None`/unset by default) drives a
+  `<title>` + Open Graph + Twitter Card `<meta>` block in `<head>`, so sharing
+  the published GitHub Pages link in iMessage/Slack/etc. shows a rich card
+  instead of a plain link. `og:image`/`twitter:image` point at
+  `{public_url}/logo.png` — link-preview crawlers need a real HTTP(S) URL, not
+  the `data:` URI used for the on-page logo, so `fire-weather-brief.yml`'s
+  build step also copies `assets/logo.png` next to `public/index.html`. Only
+  wired into `preview_html` (the file actually published), not `email_html` —
+  no reason for an email body to carry OG tags. `None`/blank `public_url`
+  skips the whole block except a plain `<title>`; never fabricate a URL.
 - Daily quote: `MOTIVATIONAL_QUOTES` (a fixed list of short original lines)
   and `daily_quote(on_date)` — picks
   `MOTIVATIONAL_QUOTES[on_date.timetuple().tm_yday % len(MOTIVATIONAL_QUOTES)]`,
@@ -156,6 +167,7 @@ it's wired up by default.
 - **Turn off weather columns:** `weather: { enabled: false }`.
 - **Turn off fuel moisture columns:** `fuel_moisture: { enabled: false }`.
 - **Turn off the National Sitrep Summary box:** `national_sitrep: { enabled: false }`.
+- **Enable rich link previews:** set `site.public_url` to the GitHub Pages URL.
 - **Change send time:** edit the `cron` hour in `fire-weather-brief.yml`
   (has a `timezone:` field pinned to America/Los_Angeles).
 
