@@ -72,16 +72,21 @@ it's wired up by default.
 - NFDR CSV fields used: `ERC`, `SC`, `BI` (as of 2026-07 the live feed uses these
   short header names, not the older long forms like `energyReleaseComponent` —
   matched via `_col_exact()` since substring matching would also catch
-  `MaxERCTime`/`MaxSCTime`/`MaxBITime`), `NFDRType` (`O`=observed else forecast),
+  `MaxERCTime`/`MaxSCTime`/`MaxBITime`), `100HrFM`/`1000HrFM` (dead fuel
+  moisture %, matched the same way), `NFDRType` (`O`=observed else forecast),
   `observationTime`, `stationName`. `-999` is FEMS's missing-data sentinel →
-  treated as None.
+  treated as None. The feed also has `1HrFM`/`10HrFM`/`KBDI`/`GSI`/`WoodyFM`/
+  `HerbFM` if more fields are ever wanted — note NFDRS has no "10,000-hr" fuel
+  class, so don't invent one if asked.
 - Column matching is **loose/defensive**: `_col_exact()` tries an exact
   case-insensitive name match first (for short codes), falling back to `_col()`
   which squashes case/underscores and substring-matches long-form names (can
   prefer `min`/`max`). This combo survives FEMS header changes in either
   direction. Weather picks **min** RH and **max** wind/gust.
 - Per-station brief shows: latest observed SC/ERC/BI, BI Δ vs. the prior observed
-  day, 7-day forecast peak BI, and (if `weather.enabled`) Min RH / Wind / Gust.
+  day, 7-day forecast peak BI, (if `weather.enabled`) Min RH / Wind / Gust, and
+  (if `fuel_moisture.enabled`) 100-hr/1000-hr dead fuel moisture % — the latter
+  comes free from the same NFDR fetch, no extra API call needed.
 - Adjective ratings (Low→Extreme chips) only render where the user provides
   per-station percentile breakpoints in `thresholds:` — absolute NFDR values are
   NOT comparable across stations, so never invent thresholds.
@@ -103,6 +108,7 @@ it's wired up by default.
 - **Change fuel model:** per-center `fuel_models` (V/W/X/Y/Z); use the model from
   that area's Fire Danger Operating Plan (Y=timber default, X=chaparral common in SoCal).
 - **Turn off weather columns:** `weather: { enabled: false }`.
+- **Turn off fuel moisture columns:** `fuel_moisture: { enabled: false }`.
 - **Change send time:** edit the `cron` hour in `fire-weather-brief.yml`
   (has a `timezone:` field pinned to America/Los_Angeles).
 

@@ -71,6 +71,8 @@ class DayValues:
     erc: Optional[float]
     bi: Optional[float]
     observed: bool
+    fm100: Optional[float] = None   # 100-hr dead fuel moisture, %
+    fm1000: Optional[float] = None  # 1000-hr dead fuel moisture, %
 
 
 @dataclass
@@ -192,6 +194,8 @@ def parse_reports(csv_text: str) -> dict[str, StationReport]:
     c_sc = _col_exact(fn, "SC") or _col(fn, "spreadcomponent")
     c_erc = _col_exact(fn, "ERC") or _col(fn, "energyreleasecomponent")
     c_bi = _col_exact(fn, "BI") or _col(fn, "burningindex")
+    c_fm100 = _col_exact(fn, "100HrFM") or _col(fn, "100hrfm")
+    c_fm1000 = _col_exact(fn, "1000HrFM") or _col(fn, "1000hrfm")
     c_type = _col(fn, "nfdrtype")
     c_time = (_col(fn, "observationtime") or _col(fn, "nfdrdate")
               or _col(fn, "date"))
@@ -208,6 +212,8 @@ def parse_reports(csv_text: str) -> dict[str, StationReport]:
             erc=_to_float(row.get(c_erc)) if c_erc else None,
             bi=_to_float(row.get(c_bi)) if c_bi else None,
             observed=observed,
+            fm100=_to_float(row.get(c_fm100)) if c_fm100 else None,
+            fm1000=_to_float(row.get(c_fm1000)) if c_fm1000 else None,
         )
         rows_by_station.setdefault(name, []).append(dv)
 
@@ -486,8 +492,13 @@ def build_trend_chart(gacc_rows) -> Optional[bytes]:
     except Exception:  # noqa: BLE001 - chart is optional, never fatal
         return None
 
-    movers.sort(key=lambda m: m[2])  # ascending -> largest increase on top
-    labels = [f"{m[0]} ({m[1]})" for m in movers]
+    # Sort by today's actual BI (ascending -> highest current risk on top), so
+    # the chart reads as a risk-ranked list, not just a ranked-by-swing list.
+    # NOTE: BI is not comparable across stations without station-specific
+    # percentiles, so this ordering/labeling shows each station's own number
+    # rather than implying a universal "high/low" scale across stations.
+    movers.sort(key=lambda m: m[3])
+    labels = [f"{m[0]} ({m[1]})  — BI {m[3]:.0f}" for m in movers]
     deltas = [m[2] for m in movers]
 
     def color(d):
@@ -508,10 +519,10 @@ def build_trend_chart(gacc_rows) -> Optional[bytes]:
     ax.axvline(0, color="#455a64", lw=1)
     ax.set_yticks(range(n))
     ax.set_yticklabels(labels, fontsize=9)
-    ax.set_xlabel("Burning Index change vs. yesterday  (\u0394 = today \u2212 yesterday)",
-                  fontsize=9)
-    ax.set_title("Overnight fire danger movement", fontsize=12, fontweight="bold",
-                 loc="left", color="#bf360c")
+    ax.set_xlabel("\u2190 easing        Burning Index change vs. yesterday        "
+                  "worsening \u2192", fontsize=9)
+    ax.set_title("Fire danger: current risk (top = highest) & overnight movement",
+                 fontsize=12, fontweight="bold", loc="left", color="#bf360c")
     mx = max(5.0, max(abs(d) for d in deltas))
     ax.set_xlim(-mx * 1.35, mx * 1.35)
     for i, d in enumerate(deltas):
@@ -534,7 +545,7 @@ def build_trend_chart(gacc_rows) -> Optional[bytes]:
 # Rendering — HTML
 # --------------------------------------------------------------------------- #
 def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
-                want_weather=True, chart_src=None) -> str:
+                want_weather=True, chart_src=None, want_fm=True) -> str:
     def rating_cell(val, station_id, index_key):
         bp = thresholds.get(str(station_id), {}).get(index_key)
         level = classify(val, bp)
@@ -576,7 +587,10 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
     # weather columns
     wx_head = ('<th align="center">Min RH</th><th align="center">Wind</th>'
                '<th align="center">Gust</th>') if want_weather else ""
-    ncols = 6 + (3 if want_weather else 0)
+    # dead fuel moisture columns
+    fm_head = ('<th align="center">100-hr FM</th><th align="center">1000-hr FM</th>'
+              ) if want_fm else ""
+    ncols = 6 + (3 if want_weather else 0) + (2 if want_fm else 0)
 
     blocks = []
     for g, rows in gacc_rows:
@@ -603,6 +617,13 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
                     f'<td align="center" style="color:{rh_color};">{fmt(w.min_rh, "%")}</td>'
                     f'<td align="center" style="color:{wd_color};">{fmt(w.max_wind)}</td>'
                     f'<td align="center" style="color:#555;">{fmt(w.max_gust)}</td>')
+            fm_cells = ""
+            if want_fm:
+                fm100 = l.fm100 if l else None
+                fm1000 = l.fm1000 if l else None
+                fm_cells = (
+                    f'<td align="center" style="color:#555;">{fmt(fm100, "%")}</td>'
+                    f'<td align="center" style="color:#555;">{fmt(fm1000, "%")}</td>')
             tr.append(
                 f'<tr><td style="font-weight:600;">{rep.name}</td>'
                 f'<td align="center">{sc}</td>'
@@ -610,14 +631,14 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
                 f'<td align="center">{bi}</td>'
                 f'<td align="center" style="font-size:12px;color:#555;">{trend}</td>'
                 f'<td align="center" style="font-size:12px;color:#555;">{peak}</td>'
-                f'{wx_cells}</tr>')
+                f'{wx_cells}{fm_cells}</tr>')
         table = (
             '<table cellspacing="0" cellpadding="7" '
             'style="border-collapse:collapse;width:100%;font-size:13px;">'
             '<thead><tr style="background:#263238;color:#fff;text-align:left;">'
             '<th>Station</th><th align="center">SC</th><th align="center">ERC</th>'
             '<th align="center">BI</th><th align="center">BI &Delta;</th>'
-            f'<th align="center">7d peak</th>{wx_head}</tr></thead>'
+            f'<th align="center">7d peak</th>{wx_head}{fm_head}</tr></thead>'
             f'<tbody>{"".join(tr)}</tbody></table>')
         blocks.append(
             f'<h3 style="margin:22px 0 6px;color:#263238;border-bottom:2px solid '
@@ -629,6 +650,9 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
     wx_legend = (" &middot; Min RH = daily minimum relative humidity &middot; "
                  "Wind/Gust = daily max mph. Red = RH&le;15% or wind&ge;25 mph."
                  if want_weather else "")
+    fm_legend = (" &middot; 100-hr/1000-hr FM = dead fuel moisture (%), how much "
+                 "water is in medium/large dead fuel &mdash; lower = drier = more "
+                 "available to burn." if want_fm else "")
     return f"""<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#eceff1;
 padding:20px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
 color:#263238;">
@@ -646,7 +670,7 @@ Prodigy Fire Weather Brief</div>
 {''.join(blocks)}
 <p style="font-size:11px;color:#90a4ae;margin-top:24px;line-height:1.5;">
 SC = Spread Component &middot; ERC = Energy Release Component &middot;
-BI = Burning Index (NFDRS daily max).{wx_legend}
+BI = Burning Index (NFDRS daily max).{wx_legend}{fm_legend}
 Sources: USFS FEMS and NWS. Adjective ratings appear only where station
 percentile breakpoints are configured; absolute index values are not directly
 comparable between stations.</p>
@@ -706,7 +730,8 @@ def render_sfp_html(sfp: dict) -> str:
 # --------------------------------------------------------------------------- #
 # Rendering — plain text
 # --------------------------------------------------------------------------- #
-def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True) -> str:
+def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
+                want_fm=True) -> str:
     lines = [f"PRODIGY FIRE WEATHER BRIEF - {generated:%A %B %d, %Y}", ""]
     if ranked[:5]:
         lines.append("HIGHEST FIRE DANGER THIS MORNING")
@@ -747,6 +772,8 @@ def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True) -> st
         hdr = f"  {'Station':22} {'SC':>4} {'ERC':>4} {'BI':>4} {'7dPk':>5}"
         if want_weather:
             hdr += f" {'RH%':>4} {'Wind':>5} {'Gust':>5}"
+        if want_fm:
+            hdr += f" {'100FM':>6} {'1000FM':>7}"
         lines.append(hdr)
         for s, rep in rows:
             if rep.error:
@@ -760,6 +787,9 @@ def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True) -> st
                 w = rep.weather
                 row += (f" {fmt(w.min_rh):>4} {fmt(w.max_wind):>5} "
                         f"{fmt(w.max_gust):>5}")
+            if want_fm:
+                row += (f" {fmt(l.fm100 if l else None):>6} "
+                        f"{fmt(l.fm1000 if l else None):>7}")
             lines.append(row)
         lines.append("")
     lines.append("SC=Spread Component ERC=Energy Release Component BI=Burning Index")
@@ -843,6 +873,7 @@ def main() -> int:
     dataset = str(cfg.get("data", {}).get("dataset", "all"))
     thresholds = cfg.get("thresholds", {}) or {}
     want_weather = bool(cfg.get("weather", {}).get("enabled", True))
+    want_fm = bool(cfg.get("fuel_moisture", {}).get("enabled", True))
 
     now = dt.datetime.now().astimezone()
 
@@ -873,9 +904,9 @@ def main() -> int:
         preview_src = "data:image/png;base64," + base64.b64encode(chart_bytes).decode()
         email_src = "cid:trend"
 
-    text = render_text(gacc_rows, ranked, now, sfp, want_weather)
+    text = render_text(gacc_rows, ranked, now, sfp, want_weather, want_fm)
     preview_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
-                               want_weather, preview_src)
+                               want_weather, preview_src, want_fm)
 
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(preview_html)
@@ -890,7 +921,7 @@ def main() -> int:
         return 0
 
     email_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
-                             want_weather, email_src)
+                             want_weather, email_src, want_fm)
     send_email(cfg, subject, email_html, text, image_bytes=chart_bytes)
     print(f"Email sent to: {', '.join(cfg['email']['to_addrs'])}")
     return 0

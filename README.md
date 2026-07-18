@@ -126,6 +126,8 @@ email path still works:
 | **SC** — Spread Component | rate-of-spread potential (open-ended) |
 | **ERC** — Energy Release Component | available energy / drought signal (slow-moving) |
 | **BI** — Burning Index | ~ effort to contain; roughly 10× estimated flame length |
+| **100-hr FM** — 100-hr dead fuel moisture | % water in branch/limb-sized dead fuel (~1-3" diameter); lower = drier |
+| **1000-hr FM** — 1000-hr dead fuel moisture | % water in log-sized dead fuel (~3-8" diameter); lower = drier, slow-moving like ERC |
 
 Values shown are the **daily maximum** for each index (FEMS daily-summary feed).
 
@@ -150,6 +152,14 @@ Values shown are the **daily maximum** for each index (FEMS daily-summary feed).
 relative humidity), **Wind** and **Gust** (daily max mph), pulled from the FEMS
 weather feed. RH ≤ 15% or wind ≥ 25 mph is flagged red. Turn this off with
 `weather: {enabled: false}` in `config.yaml`.
+
+**Fuel moisture columns.** Each station row also shows **100-hr FM** and
+**1000-hr FM** — the percentage of water in medium and large dead fuel (branches,
+logs). Lower % = drier = more available to burn. These come from the same FEMS
+fire-danger feed already being fetched, so there's no extra API call. Turn this
+off with `fuel_moisture: {enabled: false}`. Note: FEMS only provides
+1-hr/10-hr/100-hr/1000-hr timelag classes — there's no "10,000-hr" class in
+NFDRS, so it isn't (and can't be) included.
 
 **Significant Fire Potential section.** At the top of the brief:
 - **Live NWS alerts** — active **Red Flag Warnings** and **Fire Weather Watches**

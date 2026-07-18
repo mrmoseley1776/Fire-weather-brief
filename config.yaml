@@ -30,6 +30,13 @@ data:
 weather:
   enabled: true
 
+# Adds 100-hr / 1000-hr dead fuel moisture (%) columns. These come from the
+# same FEMS fire-danger feed already being fetched, so there's no extra API
+# call. Note: FEMS provides 1-hr/10-hr/100-hr/1000-hr timelag classes only —
+# there is no "10,000-hr" class in NFDRS, so it can't be added.
+fuel_moisture:
+  enabled: true
+
 # 7-day significant fire potential summary.
 # Live section = active NWS Red Flag Warnings + Fire Weather Watches for the
 # states below (official api.weather.gov feed, no key needed). Plus links to the
