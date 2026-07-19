@@ -177,10 +177,17 @@ it's wired up by default.
   IPAWS) are invisible to `fetch_evacuation_alerts()` — this box surfaces the
   named incident itself (with a link to its official InciWeb page) so a human
   can go check, even when no structured evacuation alert exists for it.
-  `fetch_inciweb_incidents()` sorts by `pubDate` (most-recently-updated
-  first) and caps at 15 (`max_items`) to keep the box a reasonable size — the
-  live feed can carry 50+ incidents nationwide on a bad fire day. No
-  client-side live-refresh here (unlike Evacuation Orders) — daily-build
+  `fetch_inciweb_incidents()` selects which incidents make the list by
+  `pubDate` (most-recently-updated first, capped at 15/`max_items` — the live
+  feed can carry 50+ incidents nationwide on a bad fire day) but then
+  re-sorts that selected set alphabetically by `(state, name)` before
+  returning, so a brand-new incident can't get bumped by sort order alone
+  while the *displayed* list still reads alphabetically. `render_incidents_html()`
+  splits the already-alphabetical list into two sequential halves (not
+  interleaved) rendered as a two-column HTML `<table>` — table-based rather
+  than CSS `column-count` for email-client compatibility, matching every
+  other multi-column layout in this file. No client-side live-refresh here
+  (unlike Evacuation Orders) — daily-build
   freshness was judged sufficient since this box's job is discovery/links,
   not the alert itself.
 - National Sitrep Summary box: `fetch_sitrep_pdf()` downloads the same NICC

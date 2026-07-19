@@ -451,12 +451,15 @@ _INCIWEB_STATE_RE = re.compile(r"State:\s*([A-Za-z .]+?)\s*(?:\n|---|$)")
 def fetch_inciweb_incidents(states: list[str], contact: str, timeout: int = 20,
                              max_items: int = 15) -> list[dict]:
     """Return actively-updated InciWeb incidents (fire name + link) for the
-    given states, most-recently-updated first. Free/keyless national RSS feed
-    maintained by incident PIOs -- a good complementary "known named fires"
-    list, but NOT a structured evacuation-order source: whether an incident's
-    free-text overview mentions evacuations at all is entirely up to that
-    incident's PIO (see README/CLAUDE.md). Best-effort like every other feed
-    here: any fetch/parse failure should be caught by the caller, not here."""
+    given states, alphabetical by state (then name). Free/keyless national
+    RSS feed maintained by incident PIOs -- a good complementary "known named
+    fires" list, but NOT a structured evacuation-order source: whether an
+    incident's free-text overview mentions evacuations at all is entirely up
+    to that incident's PIO (see README/CLAUDE.md). Best-effort like every
+    other feed here: any fetch/parse failure should be caught by the caller,
+    not here. Selection (which incidents make the cut) is still by most-
+    recently-updated -- only the final display order is alphabetical, so a
+    quiet, longstanding incident can't push a brand-new one out of the list."""
     if not states:
         return []
     headers = {"User-Agent": f"ProdigyFireWeatherBrief ({contact})"}
@@ -488,7 +491,9 @@ def fetch_inciweb_incidents(states: list[str], contact: str, timeout: int = 20,
         })
     incidents.sort(key=lambda i: i["updated"] or dt.datetime.min.replace(
         tzinfo=dt.timezone.utc), reverse=True)
-    return incidents[:max_items]
+    selected = incidents[:max_items]
+    selected.sort(key=lambda i: (i["state"], i["name"]))
+    return selected
 
 
 # --------------------------------------------------------------------------- #
@@ -1052,8 +1057,25 @@ def render_incidents_html(incidents_data: dict) -> str:
                     f'<a href="{i["link"]}" style="color:#1565c0;font-weight:600;'
                     f'text-decoration:none;">{i["name"]}</a> '
                     f'<span style="color:#607d8b;font-size:12px;">({i["state"]})</span></li>')
-        inner = ('<ul style="margin:0 0 4px 18px;padding:0;">'
-                 + "".join(inc_line(i) for i in incidents) + '</ul>')
+
+        def col(items):
+            return ('<ul style="margin:0;padding:0 0 0 18px;">'
+                    + "".join(inc_line(i) for i in items) + '</ul>')
+
+        # Already sorted alphabetically by state (then name) -- split into two
+        # columns sequentially (not interleaved) so each column reads as a
+        # contiguous alphabetical run, table-based for email client
+        # compatibility (CSS multi-column isn't reliably supported there).
+        half = (len(incidents) + 1) // 2
+        left, right = incidents[:half], incidents[half:]
+        inner = (
+            '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="border-collapse:collapse;">'
+            '<tr>'
+            f'<td valign="top" style="width:50%;">{col(left)}</td>'
+            f'<td valign="top" style="width:50%;">{col(right) if right else ""}</td>'
+            '</tr></table>'
+        )
 
     return (
         '<div class="fw-box" style="background:#eef3f8;border:1px solid #b8cfe0;border-radius:8px;'

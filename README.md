@@ -227,9 +227,10 @@ nothing breaks either way. (Every other section still only updates on the
 daily 6 AM build.)
 
 **Active Incidents (InciWeb) box.** Below Significant Fire Potential, a blue
-box lists actively-updated named fires in your monitored states, pulled from
-InciWeb (`inciweb.wildfire.gov`) — the free, keyless, national system fire
-incident PIOs post directly to. Turn it off with
+box lists actively-updated named fires in your monitored states, sorted
+alphabetically by state and laid out in two columns, pulled from InciWeb
+(`inciweb.wildfire.gov`) — the free, keyless, national system fire incident
+PIOs post directly to. Turn it off with
 `active_incidents: { enabled: false }`. Each entry links straight to that
 fire's official InciWeb page. **Why this exists:** not every county's
 evacuation order gets relayed through NWS/IPAWS (the source the Evacuation
