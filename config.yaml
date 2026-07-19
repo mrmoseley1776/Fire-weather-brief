@@ -69,9 +69,9 @@ significant_fire_potential:
 # alerts feed (event types "Evacuation Immediate" / "Civil Emergency Message" --
 # issued by local emergency management via IPAWS). Reuses the states/
 # contact_email from significant_fire_potential above; toggle independently
-# here. Best-effort: fire name and evacuee counts are only shown when the
-# issuing agency's alert text explicitly states them -- most alerts won't
-# include a headcount, and that's a gap in the source alert, not this tool.
+# here. Best-effort: fire name is only shown when the issuing agency's alert
+# text explicitly states it -- most alerts won't, and that's a gap in the
+# source alert, not this tool.
 evacuation_orders:
   enabled: true
 

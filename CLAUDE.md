@@ -129,13 +129,14 @@ it's wired up by default.
   Rendered by `render_evac_html()`/inline in `render_text()`, positioned
   right after the "Highest fire danger" box and before Significant Fire
   Potential — evacuations are the most acute/actionable signal, so they lead.
-  `_extract_fire_name()`/`_extract_headcount()` are regex best-effort scans of
-  each alert's headline+description text (`_FIRE_NAME_RE`/`_HEADCOUNT_RE`);
-  both are commonly `None` since neither is a structured CAP field — never
-  backfill/guess either one, a blank field means the alert didn't state it,
-  not that parsing failed. No free public feed has structured city/fire-name/
-  evacuee-count data (Genasys Protect/Zonehaven etc. aren't open APIs), so
-  this NWS-alert-text scan is the best available free/keyless source.
+  `_extract_fire_name()` is a regex best-effort scan of each alert's
+  headline+description text (`_FIRE_NAME_RE`); commonly `None` since it's not
+  a structured CAP field — never backfill/guess it, a blank field means the
+  alert didn't state it, not that parsing failed. No free public feed has
+  structured city/fire-name data (Genasys Protect/Zonehaven etc. aren't open
+  APIs), so this NWS-alert-text scan is the best available free/keyless
+  source. (Evacuee/structure counts were dropped from this box — too
+  unreliable/rarely stated to be worth surfacing.)
 - Evacuation Orders live refresh: unlike every other box (which only updates
   on the once-daily GitHub Actions build), the Evacuation Orders box also
   refreshes itself client-side on every page load, since evacuation status is
@@ -145,8 +146,8 @@ it's wired up by default.
   `fetch()`es `api.weather.gov/alerts/active` straight from the browser —
   confirmed viable via `curl -I -H "Origin: ..." ".../alerts/active?area=CA"`
   returning `access-control-allow-origin: *`. The JS is a hand-mirrored port
-  of `fetch_evacuation_alerts()`/`_extract_fire_name()`/`_extract_headcount()`
-  (same event filter, same regexes) — keep the two in sync if either changes.
+  of `fetch_evacuation_alerts()`/`_extract_fire_name()` (same event filter,
+  same regex) — keep the two in sync if either changes.
   On success it replaces `#fw-evac-body`'s innerHTML and shows a "live as of
   HH:MM" badge (`#fw-evac-live-badge`); on failure (offline, CORS hiccup, JS
   disabled) it silently no-ops and leaves the server-rendered snapshot from

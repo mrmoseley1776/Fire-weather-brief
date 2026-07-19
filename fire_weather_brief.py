@@ -56,26 +56,17 @@ FIRE_ALERT_EVENTS = ("Red Flag Warning", "Fire Weather Watch")
 # catch-all some counties use instead/also.
 EVAC_ALERT_EVENTS = ("Evacuation Immediate", "Civil Emergency Message")
 
-# Best-effort text scans for a fire name / evacuee count inside an evacuation
-# alert's free-text headline+description. Neither is a structured CAP field --
-# most alerts won't match either pattern, and that's a real gap in the source
-# alert, not a parsing failure. Never fabricate a value if these don't match.
+# Best-effort text scan for a fire name inside an evacuation alert's free-text
+# headline+description. Not a structured CAP field -- most alerts won't match,
+# and that's a real gap in the source alert, not a parsing failure. Never
+# fabricate a value if this doesn't match.
 _FIRE_NAME_RE = re.compile(
     r"\b((?:[A-Z][\w'.-]*\s){0,3}[A-Z][\w'.-]*\s+Fire)\b")
-_HEADCOUNT_RE = re.compile(
-    r"(?:approximately|about|an estimated|roughly)?\s*([\d,]{2,7})\+?\s+"
-    r"(?:residents|people|persons|homes|households|structures|evacuees)\b",
-    re.IGNORECASE)
 
 
 def _extract_fire_name(text: str) -> Optional[str]:
     m = _FIRE_NAME_RE.search(text or "")
     return m.group(1).strip() if m else None
-
-
-def _extract_headcount(text: str) -> Optional[str]:
-    m = _HEADCOUNT_RE.search(text or "")
-    return m.group(1) if m else None
 
 
 # --------------------------------------------------------------------------- #
@@ -360,8 +351,8 @@ def fetch_evacuation_alerts(states: list[str], contact: str,
     Same endpoint/params as fetch_fire_alerts() but a different event filter --
     kept as a separate request (rather than sharing one fetch) so this box
     degrades independently if the feed hiccups on one call but not the other.
-    fire_name/people are best-effort text-scan extractions and are often None;
-    that reflects what the alert actually said, not a parsing failure."""
+    fire_name is a best-effort text-scan extraction and is often None; that
+    reflects what the alert actually said, not a parsing failure."""
     if not states:
         return []
     headers = {
@@ -389,7 +380,6 @@ def fetch_evacuation_alerts(states: list[str], contact: str,
             "ends": p.get("ends") or p.get("expires") or "",
             "states": _states_from_geocode(p.get("geocode", {})),
             "fire_name": _extract_fire_name(text),
-            "people": _extract_headcount(text),
         })
     return alerts
 
@@ -800,8 +790,8 @@ def render_sfp_html(sfp: dict) -> str:
 # allows direct browser calls (confirmed: Access-Control-Allow-Origin: *), so
 # this fetches straight from api.weather.gov on every page load/refresh --
 # genuinely live, not tied to the once-daily GitHub Actions rebuild. Mirrors
-# fetch_evacuation_alerts()/_extract_fire_name()/_extract_headcount() in JS;
-# keep the two in sync if either changes. The server-rendered box (built from
+# fetch_evacuation_alerts()/_extract_fire_name() in JS; keep the two in sync
+# if either changes. The server-rendered box (built from
 # whatever build_evacuations() fetched at the last daily run) stays in the
 # DOM as an immediate fallback and is only replaced if this fetch succeeds --
 # if it fails (offline, CORS hiccup, JS disabled), the page still shows that
@@ -816,7 +806,6 @@ _EVAC_LIVE_SCRIPT_TEMPLATE = """
   if (!STATES.length) { return; }
   var EVAC_EVENTS = ["Evacuation Immediate", "Civil Emergency Message"];
   var FIRE_RE = /\\b((?:[A-Z][\\w'.-]*\\s){0,3}[A-Z][\\w'.-]*\\s+Fire)\\b/;
-  var COUNT_RE = /(?:approximately|about|an estimated|roughly)?\\s*([\\d,]{2,7})\\+?\\s+(?:residents|people|persons|homes|households|structures|evacuees)\\b/i;
 
   function esc(s){
     var d = document.createElement('div');
@@ -835,10 +824,9 @@ _EVAC_LIVE_SCRIPT_TEMPLATE = """
     var ends = fmtTime(a.ends);
     var span = (when || ends) ? (' (' + esc(when) + '&ndash;' + esc(ends) + ')') : '';
     var fire = a.fire ? (' &mdash; <b>' + esc(a.fire) + '</b>') : '';
-    var people = a.people ? (' &middot; ~' + esc(a.people) + ' evacuees') : '';
     return '<li style="margin-bottom:3px;"><span style="background:' + tagColor +
       ';color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;">' + esc(a.event) +
-      '</span> ' + esc(a.area) + fire + people + span + '</li>';
+      '</span> ' + esc(a.area) + fire + span + '</li>';
   }
 
   fetch('https://api.weather.gov/alerts/active?area=' + STATES.join(',') +
@@ -853,7 +841,6 @@ _EVAC_LIVE_SCRIPT_TEMPLATE = """
         if (EVAC_EVENTS.indexOf(event) === -1) { return; }
         var text = [p.headline, p.description].filter(Boolean).join(' ');
         var fireM = FIRE_RE.exec(text);
-        var countM = COUNT_RE.exec(text);
         var states = [];
         ((p.geocode && p.geocode.UGC) || []).forEach(function(u){
           if (u.length >= 2) { states.push(u.slice(0, 2).toUpperCase()); }
@@ -864,8 +851,7 @@ _EVAC_LIVE_SCRIPT_TEMPLATE = """
           onset: p.onset || p.effective || '',
           ends: p.ends || p.expires || '',
           states: states,
-          fire: fireM ? fireM[1].trim() : null,
-          people: countM ? countM[1] : null
+          fire: fireM ? fireM[1].trim() : null
         });
       });
 
@@ -938,11 +924,10 @@ def render_evac_html(evac: dict) -> str:
             ends = _fmt_alert_time(a["ends"])
             span = f" ({when}&ndash;{ends})" if when or ends else ""
             fire = f' &mdash; <b>{a["fire_name"]}</b>' if a.get("fire_name") else ""
-            people = f' &middot; ~{a["people"]} evacuees' if a.get("people") else ""
             return (f'<li style="margin-bottom:3px;"><span style="background:'
                     f'{tag_color};color:#fff;font-size:10px;padding:1px 6px;'
                     f'border-radius:8px;">{a["event"]}</span> {a["area"]}'
-                    f'{fire}{people}{span}</li>')
+                    f'{fire}{span}</li>')
         parts = []
         for state, alist in grouped.items():
             parts.append(f'<div style="margin:6px 0 2px;font-weight:700;'
@@ -967,8 +952,8 @@ def render_evac_html(evac: dict) -> str:
         f'<div id="fw-evac-body">{inner}</div>'
         '<div style="margin-top:6px;font-size:11px;color:#8a8574;">'
         'Source: active NWS alerts (Evacuation Immediate / Civil Emergency '
-        'Message). Fire name and evacuee counts shown only when stated in the '
-        'alert text &mdash; often not included by the issuing agency.</div></div>'
+        'Message). Fire name shown only when stated in the alert text '
+        '&mdash; often not included by the issuing agency.</div></div>'
         f'{script}')
 
 
@@ -1040,8 +1025,7 @@ def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
         else:
             def fmt_evac(a):
                 fire = f" - {a['fire_name']}" if a.get("fire_name") else ""
-                people = f" (~{a['people']} evacuees)" if a.get("people") else ""
-                return f"    [{a['event']}] {a['area']}{fire}{people}"
+                return f"    [{a['event']}] {a['area']}{fire}"
             for state, alist in evac.get("grouped", {}).items():
                 lines.append(f"  {state}:")
                 for a in alist:
