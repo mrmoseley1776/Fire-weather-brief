@@ -23,6 +23,9 @@ windows — which is exactly what this tool uses.
   breakpoints (see `thresholds` in `config.yaml`).
 - **Evacuation Orders** — active NWS evacuation alerts, with fire name when
   the alert states it (see below).
+- **Active Incidents (InciWeb)** — a linked list of actively-updated named
+  fires in your monitored states, from the free national InciWeb feed (see
+  below).
 
 ---
 
@@ -222,6 +225,22 @@ refresh completes. If the live check fails for any reason (offline, feed
 hiccup), the box just keeps showing the snapshot from that morning's build —
 nothing breaks either way. (Every other section still only updates on the
 daily 6 AM build.)
+
+**Active Incidents (InciWeb) box.** Below Significant Fire Potential, a blue
+box lists actively-updated named fires in your monitored states, pulled from
+InciWeb (`inciweb.wildfire.gov`) — the free, keyless, national system fire
+incident PIOs post directly to. Turn it off with
+`active_incidents: { enabled: false }`. Each entry links straight to that
+fire's official InciWeb page. **Why this exists:** not every county's
+evacuation order gets relayed through NWS/IPAWS (the source the Evacuation
+Orders box above uses), so a real, active evacuation can sometimes go
+unreported there — this box is a free complement, giving you a quick way to
+click through to a fire's official page and check for evacuation detail
+yourself. It is *not* a structured evacuation feed itself: whether an
+incident's InciWeb page mentions evacuations at all is up to that incident's
+PIO. Degrades the same way as every other box — a feed hiccup just shows
+"feed unavailable," and a quiet stretch with no actively-updated incidents in
+your states will just read "No actively-updated named incidents."
 
 **National Sitrep Summary box.** Below the SC/ERC/BI legend, a gold summary
 box pulls the headline numbers off page 1 of the same daily NICC Incident

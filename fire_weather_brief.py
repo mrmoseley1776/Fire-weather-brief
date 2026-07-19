@@ -34,9 +34,11 @@ import os
 import re
 import smtplib
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional
 
@@ -47,6 +49,35 @@ FEMS_BASE = "https://fems.fs2c.usda.gov/api/ext-climatology"
 NFDR_DAILY_ENDPOINT = f"{FEMS_BASE}/download-nfdr-daily-summary/"
 WX_DAILY_ENDPOINT = f"{FEMS_BASE}/download-wx-daily-summary/"
 NWS_ALERTS_ENDPOINT = "https://api.weather.gov/alerts/active"
+
+# InciWeb (inciweb.wildfire.gov) is the interagency incident-information system
+# PIOs post directly to -- free, keyless, national. Its RSS feed lists every
+# actively-updated incident (fire name, state, coordinates, and a free-text
+# overview that *sometimes* includes an EVACUATIONS section, at the PIO's
+# discretion). Used here as a complementary "known active named incidents"
+# list, not as a structured evacuation-order source -- see build_active_incidents().
+INCIWEB_RSS_URL = "https://inciweb.wildfire.gov/incidents/rss.xml"
+
+# Full state/territory name -> USPS abbreviation, for matching InciWeb's
+# "State: <full name>" text against the abbreviations used everywhere else in
+# this config (significant_fire_potential.states etc).
+US_STATE_NAME_TO_ABBR = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR",
+    "California": "CA", "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE",
+    "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID",
+    "Illinois": "IL", "Indiana": "IN", "Iowa": "IA", "Kansas": "KS",
+    "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+    "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN",
+    "Mississippi": "MS", "Missouri": "MO", "Montana": "MT", "Nebraska": "NE",
+    "Nevada": "NV", "New Hampshire": "NH", "New Jersey": "NJ",
+    "New Mexico": "NM", "New York": "NY", "North Carolina": "NC",
+    "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK", "Oregon": "OR",
+    "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC",
+    "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX", "Utah": "UT",
+    "Vermont": "VT", "Virginia": "VA", "Washington": "WA",
+    "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY",
+    "District of Columbia": "DC",
+}
 
 FIRE_ALERT_EVENTS = ("Red Flag Warning", "Fire Weather Watch")
 
@@ -414,6 +445,52 @@ def group_alerts_by_state(alerts: list[dict], states_order: list[str]) -> dict:
     return {s: v for s, v in grouped.items() if v}, other
 
 
+_INCIWEB_STATE_RE = re.compile(r"State:\s*([A-Za-z .]+?)\s*(?:\n|---|$)")
+
+
+def fetch_inciweb_incidents(states: list[str], contact: str, timeout: int = 20,
+                             max_items: int = 15) -> list[dict]:
+    """Return actively-updated InciWeb incidents (fire name + link) for the
+    given states, most-recently-updated first. Free/keyless national RSS feed
+    maintained by incident PIOs -- a good complementary "known named fires"
+    list, but NOT a structured evacuation-order source: whether an incident's
+    free-text overview mentions evacuations at all is entirely up to that
+    incident's PIO (see README/CLAUDE.md). Best-effort like every other feed
+    here: any fetch/parse failure should be caught by the caller, not here."""
+    if not states:
+        return []
+    headers = {"User-Agent": f"ProdigyFireWeatherBrief ({contact})"}
+    resp = requests.get(INCIWEB_RSS_URL, headers=headers, timeout=timeout)
+    resp.raise_for_status()
+    root = ET.fromstring(resp.text)
+    wanted = set(states)
+    incidents = []
+    for item in root.findall("./channel/item"):
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        desc = item.findtext("description") or ""
+        pub_date_raw = (item.findtext("pubDate") or "").strip()
+        m = _INCIWEB_STATE_RE.search(desc)
+        if not m:
+            continue
+        abbr = US_STATE_NAME_TO_ABBR.get(m.group(1).strip())
+        if abbr not in wanted:
+            continue
+        try:
+            updated = parsedate_to_datetime(pub_date_raw) if pub_date_raw else None
+        except (TypeError, ValueError):
+            updated = None
+        incidents.append({
+            "name": title,
+            "state": abbr,
+            "link": link,
+            "updated": updated,
+        })
+    incidents.sort(key=lambda i: i["updated"] or dt.datetime.min.replace(
+        tzinfo=dt.timezone.utc), reverse=True)
+    return incidents[:max_items]
+
+
 # --------------------------------------------------------------------------- #
 # Rating helpers
 # --------------------------------------------------------------------------- #
@@ -546,7 +623,7 @@ def collect_movers(gacc_rows) -> list[tuple[str, str, float, float]]:
 # --------------------------------------------------------------------------- #
 def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
                 want_weather=True, want_fm=True, logo_src=None,
-                sitrep=None, public_url=None, evac=None) -> str:
+                sitrep=None, public_url=None, evac=None, incidents=None) -> str:
     def rating_cell(val, station_id, index_key):
         bp = thresholds.get(str(station_id), {}).get(index_key)
         level = classify(val, bp)
@@ -578,6 +655,7 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
 
     evac_html = render_evac_html(evac) if evac else ""
     sfp_html = render_sfp_html(sfp) if sfp else ""
+    incidents_html = render_incidents_html(incidents) if incidents else ""
     sitrep_html = render_sitrep_html(sitrep) if sitrep else ""
 
     # weather columns
@@ -723,6 +801,7 @@ Prodigy Fire Weather Brief</div>
 {top_html}
 {evac_html}
 {sfp_html}
+{incidents_html}
 {''.join(blocks)}
 <p style="font-size:11px;color:#8a8574;margin-top:24px;line-height:1.5;">
 SC = Spread Component &middot; ERC = Energy Release Component &middot;
@@ -957,6 +1036,38 @@ def render_evac_html(evac: dict) -> str:
         f'{script}')
 
 
+def render_incidents_html(incidents_data: dict) -> str:
+    incidents = incidents_data.get("incidents", [])
+    err = incidents_data.get("error")
+
+    if err:
+        inner = (f'<div style="font-size:12px;color:#b71c1c;">'
+                 f'Live incident feed unavailable: {err}</div>')
+    elif not incidents:
+        inner = ('<div style="font-size:13px;color:#2e7d32;">'
+                 'No actively-updated named incidents in the monitored states.</div>')
+    else:
+        def inc_line(i):
+            return (f'<li style="margin-bottom:3px;">'
+                    f'<a href="{i["link"]}" style="color:#1565c0;font-weight:600;'
+                    f'text-decoration:none;">{i["name"]}</a> '
+                    f'<span style="color:#607d8b;font-size:12px;">({i["state"]})</span></li>')
+        inner = ('<ul style="margin:0 0 4px 18px;padding:0;">'
+                 + "".join(inc_line(i) for i in incidents) + '</ul>')
+
+    return (
+        '<div class="fw-box" style="background:#eef3f8;border:1px solid #b8cfe0;border-radius:8px;'
+        'padding:12px 16px;margin:0 0 18px;">'
+        '<div style="font-weight:800;color:#1565c0;font-size:15px;margin-bottom:6px;">'
+        'Active Incidents (InciWeb)</div>'
+        f'{inner}'
+        '<div style="margin-top:6px;font-size:11px;color:#8a8574;">'
+        'Source: InciWeb national incident feed, filtered to your monitored states. '
+        'Each link goes to that incident&rsquo;s official page &mdash; the best place '
+        'to check for evacuation detail the source feeds above may not have caught.'
+        '</div></div>')
+
+
 def render_sitrep_html(sitrep: dict) -> str:
     parts = []
     if sitrep.get("pl") is not None:
@@ -997,7 +1108,7 @@ def render_sitrep_html(sitrep: dict) -> str:
 # Rendering — plain text
 # --------------------------------------------------------------------------- #
 def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
-                want_fm=True, sitrep=None, evac=None) -> str:
+                want_fm=True, sitrep=None, evac=None, incidents=None) -> str:
     lines = [f"PRODIGY FIRE WEATHER BRIEF - {generated:%A %B %d, %Y}", ""]
     if ranked[:5]:
         lines.append("HIGHEST FIRE DANGER THIS MORNING")
@@ -1049,6 +1160,17 @@ def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
                 lines.append(f"  [{a['event']}] {a['area']}")
         for l in sfp.get("links", []):
             lines.append(f"  outlook: {l['label']} -> {l['url']}")
+        lines.append("")
+
+    if incidents:
+        lines.append("ACTIVE INCIDENTS (InciWeb)")
+        if incidents.get("error"):
+            lines.append(f"  feed unavailable: {incidents['error']}")
+        elif not incidents.get("incidents"):
+            lines.append("  No actively-updated named incidents in the monitored states.")
+        else:
+            for i in incidents["incidents"]:
+                lines.append(f"  {i['name']} ({i['state']}) -> {i['link']}")
         lines.append("")
 
     for g, rows in gacc_rows:
@@ -1149,6 +1271,32 @@ def build_evacuations(cfg: dict) -> Optional[dict]:
         alerts = fetch_evacuation_alerts(states, contact)
         grouped, other = group_alerts_by_state(alerts, states)
         result["grouped"], result["other"] = grouped, other
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = str(exc)
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# Active incidents (InciWeb) assembly
+# --------------------------------------------------------------------------- #
+def build_active_incidents(cfg: dict) -> Optional[dict]:
+    """Reuses significant_fire_potential's states/contact_email (same
+    monitored footprint) but is toggled independently via
+    active_incidents.enabled. Free/keyless complement to the Evacuation
+    Orders box -- lists named active incidents with a link to each one's
+    official InciWeb page, which is the best place to check for evacuation
+    detail InciWeb's own RSS text didn't happen to mention."""
+    ac = cfg.get("active_incidents", {})
+    if not ac.get("enabled", True):
+        return None
+    sc = cfg.get("significant_fire_potential", {})
+    states = [str(s).upper() for s in sc.get("states", [])]
+    if not states:
+        return None
+    contact = sc.get("contact_email") or cfg.get("email", {}).get("from_addr", "n/a")
+    result = {"incidents": [], "error": None}
+    try:
+        result["incidents"] = fetch_inciweb_incidents(states, contact)
     except Exception as exc:  # noqa: BLE001
         result["error"] = str(exc)
     return result
@@ -1391,6 +1539,7 @@ def main() -> int:
     gacc_rows, ranked = build_gacc_reports(gaccs, dataset, want_weather)
     sfp = build_sfp(cfg)
     evac = build_evacuations(cfg)
+    incidents = build_active_incidents(cfg)
     sitrep = build_sitrep_summary(cfg, [g.code for g, _ in gacc_rows])
     public_url = cfg.get("site", {}).get("public_url")
 
@@ -1403,11 +1552,12 @@ def main() -> int:
         logo_email_src = "cid:logo"
 
     text = render_text(gacc_rows, ranked, now, sfp, want_weather, want_fm,
-                       sitrep=sitrep, evac=evac)
+                       sitrep=sitrep, evac=evac, incidents=incidents)
     preview_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
                                want_weather, want_fm,
                                logo_src=logo_preview_src, sitrep=sitrep,
-                               public_url=public_url, evac=evac)
+                               public_url=public_url, evac=evac,
+                               incidents=incidents)
 
     with open(args.out, "w", encoding="utf-8") as fh:
         fh.write(preview_html)
@@ -1423,7 +1573,8 @@ def main() -> int:
 
     email_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
                              want_weather, want_fm,
-                             logo_src=logo_email_src, sitrep=sitrep, evac=evac)
+                             logo_src=logo_email_src, sitrep=sitrep, evac=evac,
+                             incidents=incidents)
     inline_images = {}
     if logo_bytes:
         inline_images["logo"] = logo_bytes

@@ -75,6 +75,15 @@ it's wired up by default.
   (`fetch_evacuation_alerts()`) rather than reusing `fetch_fire_alerts()`'s
   response, so this box degrades independently if one call fails but not the
   other.
+- InciWeb incidents: `GET https://inciweb.wildfire.gov/incidents/rss.xml`
+  (`INCIWEB_RSS_URL`) — an RSS 2.0 feed, not JSON, parsed with
+  `xml.etree.ElementTree`. Every actively-updated incident nationwide is one
+  `<item>`; state is extracted from free text inside `<description>` via
+  `_INCIWEB_STATE_RE` (`"State: <full name>"`) and mapped to a USPS
+  abbreviation via `US_STATE_NAME_TO_ABBR` (InciWeb spells states out in
+  full, everything else in this tool uses abbreviations). No `stationIds`-style
+  filter param exists server-side — the feed is fetched whole (~a few hundred
+  KB) and filtered client-side in `fetch_inciweb_incidents()`.
 
 ## Key implementation notes
 
@@ -157,6 +166,23 @@ it's wired up by default.
   browser-originated requests. Deliberately scoped to this box only, not
   Significant Fire Potential (Red Flag Warning/Fire Weather Watch) — the
   once-a-day refresh is considered sufficient there.
+- Active Incidents (InciWeb) box: `build_active_incidents()` reuses
+  `significant_fire_potential.states`/`contact_email` like the other alert
+  boxes, toggled independently via `active_incidents.enabled`. Rendered by
+  `render_incidents_html()`/inline in `render_text()`, positioned after
+  Significant Fire Potential and before the per-GACC danger tables. Built
+  specifically as a complement to the Evacuation Orders box, not a
+  replacement: it exists because evacuation orders issued only through a
+  county's own system (CodeRED/Everbridge/local press, never submitted to
+  IPAWS) are invisible to `fetch_evacuation_alerts()` — this box surfaces the
+  named incident itself (with a link to its official InciWeb page) so a human
+  can go check, even when no structured evacuation alert exists for it.
+  `fetch_inciweb_incidents()` sorts by `pubDate` (most-recently-updated
+  first) and caps at 15 (`max_items`) to keep the box a reasonable size — the
+  live feed can carry 50+ incidents nationwide on a bad fire day. No
+  client-side live-refresh here (unlike Evacuation Orders) — daily-build
+  freshness was judged sufficient since this box's job is discovery/links,
+  not the alert itself.
 - National Sitrep Summary box: `fetch_sitrep_pdf()` downloads the same NICC
   sitrep PDF linked in `predictive_services_links` (`SITREP_URL`), and
   `parse_sitrep_summary()` uses `pdfplumber` to regex-extract page-1 headline
@@ -209,6 +235,10 @@ it's wired up by default.
 - **Turn off fuel moisture columns:** `fuel_moisture: { enabled: false }`.
 - **Turn off the National Sitrep Summary box:** `national_sitrep: { enabled: false }`.
 - **Turn off the Evacuation Orders box:** `evacuation_orders: { enabled: false }`.
+- **Turn off the Active Incidents (InciWeb) box:** `active_incidents: { enabled: false }`.
+- **Change how many incidents show in that box:** `max_items` arg on
+  `fetch_inciweb_incidents()` (default 15) — not currently exposed in
+  `config.yaml`, would need a new key if the user wants it configurable.
 - **Enable rich link previews:** set `site.public_url` to the GitHub Pages URL.
 - **Change send time:** edit the `cron` hour in `fire-weather-brief.yml`
   (has a `timezone:` field pinned to America/Los_Angeles).
