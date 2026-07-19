@@ -88,10 +88,12 @@ Open `brief.html` in a browser to preview it.
 1. Put this folder in a GitHub repo.
 2. Repo **Settings → Pages → Build and deployment → Source** → select
    **"GitHub Actions"** → Save. (One-time.)
-3. The included `.github/workflows/fire-weather-brief.yml` runs daily at 6 AM
+3. The included `.github/workflows/fire-weather-brief.yml` runs daily at 8 AM
    Pacific, builds the brief, and publishes it to
    `https://<your-github-username>.github.io/<repo-name>/`. Edit the `cron:`
-   line to change the time.
+   line to change the time. (Pinned to 8 AM, not 6, so the National Sitrep
+   Summary box has that day's NICC report available — it publishes ~0730 MDT
+   / ~0630 Pacific.)
 
 ### Option B — cron (Mac/Linux, machine must be on)
 ```bash
@@ -224,7 +226,7 @@ like the rest of the brief. A small "live as of HH:MM" note appears once that
 refresh completes. If the live check fails for any reason (offline, feed
 hiccup), the box just keeps showing the snapshot from that morning's build —
 nothing breaks either way. (Every other section still only updates on the
-daily 6 AM build.)
+daily 8 AM build.)
 
 **Active Incidents (InciWeb) box.** Below Significant Fire Potential, a blue
 box lists actively-updated named fires in your monitored states, sorted

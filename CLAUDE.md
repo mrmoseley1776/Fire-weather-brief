@@ -19,7 +19,9 @@ then renders an HTML/plain-text email and sends it. Recipient:
 - `requirements.txt` — `requests`, `PyYAML`, `playwright` (PDF-of-the-brief
   export, optional at runtime), `pdfplumber` (parses the NICC sitrep PDF for the
   National Sitrep Summary box — unrelated to the Playwright PDF export).
-- `.github/workflows/fire-weather-brief.yml` — daily 6 AM Pacific run (GitHub Actions).
+- `.github/workflows/fire-weather-brief.yml` — daily 8 AM Pacific run (GitHub Actions;
+  pinned to 8, not 6, so the National Sitrep box has that day's NICC PDF, which
+  publishes ~0730 MDT / ~0630 Pacific).
 - `.github/workflows/keepalive.yml` — weekly commit so the schedule isn't auto-disabled after 60 days.
 - `README.md` — full setup, scheduling, and field reference for the user.
 

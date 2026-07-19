@@ -1,11 +1,15 @@
 name: Fire Weather Morning Brief
 
-# Runs every day at 6:00 AM Pacific, year-round, builds the brief, and
+# Runs every day at 8:00 AM Pacific, year-round, builds the brief, and
 # publishes it to GitHub Pages instead of emailing it. No SMTP setup needed.
-# The timezone field (GitHub Actions, since Mar 2026) handles daylight saving
-# automatically. To change the time, edit the hour in the cron line (24-hour).
-# If your org ever doesn't support timezone:, delete that line and use
-#   - cron: "0 13 * * *"   (13:00 UTC = ~6 AM Pacific, but drifts with DST)
+# Pinned to 8 AM (not 6) specifically so the National Sitrep Summary box has
+# that day's NICC report to parse -- the source PDF publishes ~0730 MDT
+# (~0630 Pacific), so a 6 AM Pacific run was consistently grabbing yesterday's
+# sitrep numbers. The timezone field (GitHub Actions, since Mar 2026) handles
+# daylight saving automatically. To change the time, edit the hour in the
+# cron line (24-hour). If your org ever doesn't support timezone:, delete
+# that line and use
+#   - cron: "0 15 * * *"   (15:00 UTC = ~8 AM Pacific, but drifts with DST)
 #
 # ONE-TIME SETUP REQUIRED:
 #   Repo Settings -> Pages -> Build and deployment -> Source
@@ -14,7 +18,7 @@ name: Fire Weather Morning Brief
 #   https://<your-github-username>.github.io/<repo-name>/
 on:
   schedule:
-    - cron: "0 6 * * *"
+    - cron: "0 8 * * *"
       timezone: "America/Los_Angeles"
   workflow_dispatch: {}     # adds a "Run workflow" button for manual test runs
 
