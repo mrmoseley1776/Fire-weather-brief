@@ -81,24 +81,6 @@ US_STATE_NAME_TO_ABBR = {
 
 FIRE_ALERT_EVENTS = ("Red Flag Warning", "Fire Weather Watch")
 
-# Evacuation-related CAP alert types local emergency management issues through
-# IPAWS and which NWS relays on the same alerts feed. "Evacuation Immediate" is
-# the standard wildfire evacuation-order type; "Civil Emergency Message" is a
-# catch-all some counties use instead/also.
-EVAC_ALERT_EVENTS = ("Evacuation Immediate", "Civil Emergency Message")
-
-# Best-effort text scan for a fire name inside an evacuation alert's free-text
-# headline+description. Not a structured CAP field -- most alerts won't match,
-# and that's a real gap in the source alert, not a parsing failure. Never
-# fabricate a value if this doesn't match.
-_FIRE_NAME_RE = re.compile(
-    r"\b((?:[A-Z][\w'.-]*\s){0,3}[A-Z][\w'.-]*\s+Fire)\b")
-
-
-def _extract_fire_name(text: str) -> Optional[str]:
-    m = _FIRE_NAME_RE.search(text or "")
-    return m.group(1).strip() if m else None
-
 
 # --------------------------------------------------------------------------- #
 # Config models
@@ -375,46 +357,6 @@ def fetch_fire_alerts(states: list[str], contact: str,
     return alerts
 
 
-def fetch_evacuation_alerts(states: list[str], contact: str,
-                            timeout: int = 30) -> list[dict]:
-    """Return active evacuation-order alerts (Evacuation Immediate / Civil
-    Emergency Message) for the given states, as a list of simplified dicts.
-    Same endpoint/params as fetch_fire_alerts() but a different event filter --
-    kept as a separate request (rather than sharing one fetch) so this box
-    degrades independently if the feed hiccups on one call but not the other.
-    fire_name is a best-effort text-scan extraction and is often None; that
-    reflects what the alert actually said, not a parsing failure."""
-    if not states:
-        return []
-    headers = {
-        "User-Agent": f"ProdigyFireWeatherBrief ({contact})",
-        "Accept": "application/geo+json",
-    }
-    params = {"area": ",".join(states), "status": "actual", "message_type": "alert"}
-    resp = requests.get(NWS_ALERTS_ENDPOINT, params=params, headers=headers,
-                        timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
-    alerts = []
-    for feat in data.get("features", []):
-        p = feat.get("properties", {})
-        event = (p.get("event") or "").strip()
-        if event not in EVAC_ALERT_EVENTS:
-            continue
-        text = " ".join(filter(None, [p.get("headline"), p.get("description")]))
-        alerts.append({
-            "event": event,
-            "area": p.get("areaDesc", ""),
-            "headline": p.get("headline", ""),
-            "sender": p.get("senderName", ""),
-            "onset": p.get("onset") or p.get("effective") or "",
-            "ends": p.get("ends") or p.get("expires") or "",
-            "states": _states_from_geocode(p.get("geocode", {})),
-            "fire_name": _extract_fire_name(text),
-        })
-    return alerts
-
-
 def _states_from_geocode(geocode: dict) -> set[str]:
     """Derive state postal codes from UGC zone codes (first two letters)."""
     states = set()
@@ -636,7 +578,7 @@ def collect_movers(gacc_rows) -> list[tuple[str, str, float, float]]:
 # --------------------------------------------------------------------------- #
 def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
                 want_weather=True, want_fm=True, logo_src=None,
-                sitrep=None, public_url=None, evac=None, incidents=None) -> str:
+                sitrep=None, public_url=None, incidents=None) -> str:
     def rating_cell(val, station_id, index_key):
         bp = thresholds.get(str(station_id), {}).get(index_key)
         level = classify(val, bp)
@@ -666,7 +608,6 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
             f'<ul style="margin:4px 0 0 18px;padding:0;">{items}</ul></div>'
         )
 
-    evac_html = render_evac_html(evac) if evac else ""
     sfp_html = render_sfp_html(sfp) if sfp else ""
     incidents_html = render_incidents_html(incidents) if incidents else ""
     sitrep_html = render_sitrep_html(sitrep) if sitrep else ""
@@ -812,7 +753,6 @@ Prodigy Fire Weather Brief</div>
 </div>
 <div style="padding:20px 24px;">
 {top_html}
-{evac_html}
 {sfp_html}
 {incidents_html}
 {''.join(blocks)}
@@ -885,13 +825,12 @@ def render_sfp_html(sfp: dict) -> str:
         f'{script}')
 
 
-# Client-side live refresh for the Significant Fire Potential box. Same
-# rationale/pattern as _EVAC_LIVE_SCRIPT_TEMPLATE below (mirrors
-# fetch_fire_alerts()/group_alerts_by_state() in JS instead of the evac
-# equivalents) -- fetches Red Flag Warning/Fire Weather Watch alerts straight
-# from api.weather.gov on page load so this box isn't stuck showing only
-# whatever was active at the last once-daily GitHub Actions build. No
-# fire-name extraction here (SFP alerts don't carry that in the rendered box).
+# Client-side live refresh for the Significant Fire Potential box. Fetches
+# Red Flag Warning/Fire Weather Watch alerts straight from api.weather.gov on
+# page load (mirrors fetch_fire_alerts()/group_alerts_by_state() in JS) so
+# this box isn't stuck showing only whatever was active at the last
+# once-daily GitHub Actions build. No fire-name extraction here (SFP alerts
+# don't carry that in the rendered box).
 # Only replaces #fw-sfp-body (not the static Predictive Services outlook
 # links) and leaves the server-rendered snapshot in place on any failure.
 _SFP_LIVE_SCRIPT_TEMPLATE = """
@@ -994,177 +933,6 @@ _SFP_LIVE_SCRIPT_TEMPLATE = """
 """
 
 
-# Client-side live refresh for the Evacuation Orders box. NWS's alerts API
-# allows direct browser calls (confirmed: Access-Control-Allow-Origin: *), so
-# this fetches straight from api.weather.gov on every page load/refresh --
-# genuinely live, not tied to the once-daily GitHub Actions rebuild. Mirrors
-# fetch_evacuation_alerts()/_extract_fire_name() in JS; keep the two in sync
-# if either changes. The server-rendered box (built from
-# whatever build_evacuations() fetched at the last daily run) stays in the
-# DOM as an immediate fallback and is only replaced if this fetch succeeds --
-# if it fails (offline, CORS hiccup, JS disabled), the page still shows that
-# last-build snapshot rather than breaking. Browsers won't let JS set a custom
-# User-Agent (unlike fetch_evacuation_alerts()'s contact string), so this
-# relies on NWS not strictly requiring one for browser-originated requests.
-# No-ops (skips the fetch) if no states are configured.
-_EVAC_LIVE_SCRIPT_TEMPLATE = """
-<script>
-(function(){
-  var STATES = __STATES_JSON__;
-  if (!STATES.length) { return; }
-  var EVAC_EVENTS = ["Evacuation Immediate", "Civil Emergency Message"];
-  var FIRE_RE = /\\b((?:[A-Z][\\w'.-]*\\s){0,3}[A-Z][\\w'.-]*\\s+Fire)\\b/;
-
-  function esc(s){
-    var d = document.createElement('div');
-    d.textContent = (s === null || s === undefined) ? '' : String(s);
-    return d.innerHTML;
-  }
-  function fmtTime(iso){
-    if (!iso) { return ''; }
-    var d = new Date(iso);
-    if (isNaN(d.getTime())) { return ''; }
-    return d.toLocaleString('en-US', {month: 'short', day: 'numeric', hour: 'numeric'});
-  }
-  function evacLine(a){
-    var tagColor = a.event === 'Evacuation Immediate' ? '#b71c1c' : '#6a1b9a';
-    var when = fmtTime(a.onset);
-    var ends = fmtTime(a.ends);
-    var span = (when || ends) ? (' (' + esc(when) + '&ndash;' + esc(ends) + ')') : '';
-    var fire = a.fire ? (' &mdash; <b>' + esc(a.fire) + '</b>') : '';
-    return '<li style="margin-bottom:3px;"><span style="background:' + tagColor +
-      ';color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;">' + esc(a.event) +
-      '</span> ' + esc(a.area) + fire + span + '</li>';
-  }
-
-  fetch('https://api.weather.gov/alerts/active?area=' + STATES.join(',') +
-        '&status=actual&message_type=alert',
-        {headers: {'Accept': 'application/geo+json'}})
-    .then(function(r){ if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
-    .then(function(data){
-      var alerts = [];
-      (data.features || []).forEach(function(feat){
-        var p = feat.properties || {};
-        var event = (p.event || '').trim();
-        if (EVAC_EVENTS.indexOf(event) === -1) { return; }
-        var text = [p.headline, p.description].filter(Boolean).join(' ');
-        var fireM = FIRE_RE.exec(text);
-        var states = [];
-        ((p.geocode && p.geocode.UGC) || []).forEach(function(u){
-          if (u.length >= 2) { states.push(u.slice(0, 2).toUpperCase()); }
-        });
-        alerts.push({
-          event: event,
-          area: p.areaDesc || '',
-          onset: p.onset || p.effective || '',
-          ends: p.ends || p.expires || '',
-          states: states,
-          fire: fireM ? fireM[1].trim() : null
-        });
-      });
-
-      var grouped = {};
-      STATES.forEach(function(s){ grouped[s] = []; });
-      var other = [];
-      alerts.forEach(function(a){
-        var placed = false;
-        a.states.forEach(function(s){
-          if (Object.prototype.hasOwnProperty.call(grouped, s)) {
-            grouped[s].push(a);
-            placed = true;
-          }
-        });
-        if (!placed) { other.push(a); }
-      });
-
-      var html = '';
-      if (!alerts.length) {
-        html = '<div style="font-size:13px;color:#2e7d32;">No active evacuation ' +
-               'orders in the monitored states.</div>';
-      } else {
-        STATES.forEach(function(s){
-          var list = grouped[s];
-          if (!list.length) { return; }
-          html += '<div style="margin:6px 0 2px;font-weight:700;color:#37474f;">' +
-                  esc(s) + '</div><ul style="margin:0 0 6px 18px;padding:0;">' +
-                  list.map(evacLine).join('') + '</ul>';
-        });
-        other.forEach(function(a){
-          html += '<ul style="margin:0 0 6px 18px;padding:0;">' + evacLine(a) + '</ul>';
-        });
-      }
-
-      var body = document.getElementById('fw-evac-body');
-      if (body) { body.innerHTML = html; }
-      var badge = document.getElementById('fw-evac-live-badge');
-      if (badge) {
-        var t = new Date().toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'});
-        badge.textContent = ' \\u00b7 live as of ' + t;
-        badge.style.display = 'inline';
-      }
-    })
-    .catch(function(){
-      // Live refresh failed (offline, CORS hiccup, etc.) -- leave the
-      // server-rendered snapshot from the last daily build in place.
-    });
-})();
-</script>
-"""
-
-
-def render_evac_html(evac: dict) -> str:
-    grouped = evac.get("grouped", {})
-    other = evac.get("other", [])
-    err = evac.get("error")
-    states = evac.get("states", [])
-
-    inner = ""
-    if err:
-        inner += (f'<div style="font-size:12px;color:#7a1913;">'
-                  f'Live alert feed unavailable: {err}</div>')
-    elif not grouped and not other:
-        inner += ('<div style="font-size:13px;color:#2e7d32;">'
-                  'No active evacuation orders in the monitored states.</div>')
-    else:
-        def evac_line(a):
-            tag_color = "#b71c1c" if a["event"] == "Evacuation Immediate" else "#6a1b9a"
-            when = _fmt_alert_time(a["onset"])
-            ends = _fmt_alert_time(a["ends"])
-            span = f" ({when}&ndash;{ends})" if when or ends else ""
-            fire = f' &mdash; <b>{a["fire_name"]}</b>' if a.get("fire_name") else ""
-            return (f'<li style="margin-bottom:3px;"><span style="background:'
-                    f'{tag_color};color:#fff;font-size:10px;padding:1px 6px;'
-                    f'border-radius:8px;">{a["event"]}</span> {a["area"]}'
-                    f'{fire}{span}</li>')
-        parts = []
-        for state, alist in grouped.items():
-            parts.append(f'<div style="margin:6px 0 2px;font-weight:700;'
-                         f'color:#37474f;">{state}</div>'
-                         f'<ul style="margin:0 0 6px 18px;padding:0;">'
-                         + "".join(evac_line(a) for a in alist) + '</ul>')
-        for a in other:
-            parts.append(f'<ul style="margin:0 0 6px 18px;padding:0;">'
-                         f'{evac_line(a)}</ul>')
-        inner += "".join(parts)
-
-    script = (_EVAC_LIVE_SCRIPT_TEMPLATE.replace("__STATES_JSON__", json.dumps(states))
-              if states else "")
-
-    return (
-        '<div class="fw-box" style="background:#fdecea;border:1px solid #f1a9a0;border-radius:8px;'
-        'padding:12px 16px;margin:0 0 18px;">'
-        '<div style="font-weight:800;color:#b71c1c;font-size:15px;margin-bottom:6px;">'
-        'Evacuation Orders'
-        '<span id="fw-evac-live-badge" style="display:none;font-weight:400;'
-        'font-size:11px;color:#8a8574;"></span></div>'
-        f'<div id="fw-evac-body">{inner}</div>'
-        '<div style="margin-top:6px;font-size:11px;color:#8a8574;">'
-        'Source: active NWS alerts (Evacuation Immediate / Civil Emergency '
-        'Message). Fire name shown only when stated in the alert text '
-        '&mdash; often not included by the issuing agency.</div></div>'
-        f'{script}')
-
-
 def render_incidents_html(incidents_data: dict) -> str:
     incidents = incidents_data.get("incidents", [])
     err = incidents_data.get("error")
@@ -1213,11 +981,12 @@ def render_incidents_html(incidents_data: dict) -> str:
         f'{inner}'
         '<div style="margin-top:6px;font-size:11px;color:#8a8574;">'
         'Source: InciWeb national incident feed, filtered to your monitored states. '
-        'Each link goes to that incident&rsquo;s official page &mdash; the best place '
-        'to check for evacuation detail the source feeds above may not have caught. '
+        'Each link goes to that incident&rsquo;s official page for the latest detail. '
         'A red EVAC tag means that incident&rsquo;s InciWeb overview text mentions '
         'evacuations &mdash; those incidents are never dropped from this list, even '
-        'on a high-activity day.'
+        'on a high-activity day. This is a free-text match against a PIO-written '
+        'summary, not a structured order feed, so treat it as a pointer to go check '
+        'the linked page, not a guarantee an order is (or isn&rsquo;t) currently active.'
         '</div></div>')
 
 
@@ -1261,7 +1030,7 @@ def render_sitrep_html(sitrep: dict) -> str:
 # Rendering — plain text
 # --------------------------------------------------------------------------- #
 def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
-                want_fm=True, sitrep=None, evac=None, incidents=None) -> str:
+                want_fm=True, sitrep=None, incidents=None) -> str:
     lines = [f"PRODIGY FIRE WEATHER BRIEF - {generated:%A %B %d, %Y}", ""]
     if ranked[:5]:
         lines.append("HIGHEST FIRE DANGER THIS MORNING")
@@ -1278,24 +1047,6 @@ def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
         lines.append("OVERNIGHT MOVEMENT (Burning Index vs. yesterday)")
         for name, code, delta, today in movers[:8]:
             lines.append(f"  {name} ({code}): {delta:+.0f}  ->  BI {today:.0f}")
-        lines.append("")
-
-    if evac:
-        lines.append("EVACUATION ORDERS (active NWS alerts)")
-        if evac.get("error"):
-            lines.append(f"  feed unavailable: {evac['error']}")
-        elif not evac.get("grouped") and not evac.get("other"):
-            lines.append("  No active evacuation orders.")
-        else:
-            def fmt_evac(a):
-                fire = f" - {a['fire_name']}" if a.get("fire_name") else ""
-                return f"    [{a['event']}] {a['area']}{fire}"
-            for state, alist in evac.get("grouped", {}).items():
-                lines.append(f"  {state}:")
-                for a in alist:
-                    lines.append(fmt_evac(a))
-            for a in evac.get("other", []):
-                lines.append(fmt_evac(a))
         lines.append("")
 
     if sfp:
@@ -1399,33 +1150,6 @@ def build_sfp(cfg: dict) -> Optional[dict]:
     result = {"grouped": {}, "other": [], "links": links, "error": None, "states": states}
     try:
         alerts = fetch_fire_alerts(states, contact)
-        grouped, other = group_alerts_by_state(alerts, states)
-        result["grouped"], result["other"] = grouped, other
-    except Exception as exc:  # noqa: BLE001
-        result["error"] = str(exc)
-    return result
-
-
-# --------------------------------------------------------------------------- #
-# Evacuation orders assembly
-# --------------------------------------------------------------------------- #
-def build_evacuations(cfg: dict) -> Optional[dict]:
-    """Reuses significant_fire_potential's states/contact_email since it's the
-    same monitored footprint -- toggled independently via evacuation_orders."""
-    ec = cfg.get("evacuation_orders", {})
-    if not ec.get("enabled", True):
-        return None
-    sc = cfg.get("significant_fire_potential", {})
-    states = [str(s).upper() for s in sc.get("states", [])]
-    if not states:
-        return None
-    contact = sc.get("contact_email") or cfg.get("email", {}).get("from_addr", "n/a")
-    # "states" travels with the result (even on failure/empty) so
-    # render_evac_html() can embed it for the client-side live-refresh script
-    # without needing a separate path back to config.yaml.
-    result = {"grouped": {}, "other": [], "error": None, "states": states}
-    try:
-        alerts = fetch_evacuation_alerts(states, contact)
         grouped, other = group_alerts_by_state(alerts, states)
         result["grouped"], result["other"] = grouped, other
     except Exception as exc:  # noqa: BLE001
@@ -1695,7 +1419,6 @@ def main() -> int:
 
     gacc_rows, ranked = build_gacc_reports(gaccs, dataset, want_weather)
     sfp = build_sfp(cfg)
-    evac = build_evacuations(cfg)
     incidents = build_active_incidents(cfg)
     sitrep = build_sitrep_summary(cfg, [g.code for g, _ in gacc_rows])
     public_url = cfg.get("site", {}).get("public_url")
@@ -1709,11 +1432,11 @@ def main() -> int:
         logo_email_src = "cid:logo"
 
     text = render_text(gacc_rows, ranked, now, sfp, want_weather, want_fm,
-                       sitrep=sitrep, evac=evac, incidents=incidents)
+                       sitrep=sitrep, incidents=incidents)
     preview_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
                                want_weather, want_fm,
                                logo_src=logo_preview_src, sitrep=sitrep,
-                               public_url=public_url, evac=evac,
+                               public_url=public_url,
                                incidents=incidents)
 
     with open(args.out, "w", encoding="utf-8") as fh:
@@ -1730,7 +1453,7 @@ def main() -> int:
 
     email_html = render_html(gacc_rows, ranked, thresholds, now, sfp,
                              want_weather, want_fm,
-                             logo_src=logo_email_src, sitrep=sitrep, evac=evac,
+                             logo_src=logo_email_src, sitrep=sitrep,
                              incidents=incidents)
     inline_images = {}
     if logo_bytes:

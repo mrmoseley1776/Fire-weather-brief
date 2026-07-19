@@ -70,13 +70,6 @@ it's wired up by default.
   in code to `event in {"Red Flag Warning","Fire Weather Watch"}`. NWS requires a
   descriptive `User-Agent` with a contact; the tool builds it from
   `significant_fire_potential.contact_email`.
-- NWS evacuation alerts: same endpoint/params as above, filtered instead to
-  `event in {"Evacuation Immediate","Civil Emergency Message"}`
-  (`EVAC_ALERT_EVENTS`) — issued by local emergency management via IPAWS, not
-  a dedicated evacuation feed. Fetched as a separate request
-  (`fetch_evacuation_alerts()`) rather than reusing `fetch_fire_alerts()`'s
-  response, so this box degrades independently if one call fails but not the
-  other.
 - InciWeb incidents: `GET https://inciweb.wildfire.gov/incidents/rss.xml`
   (`INCIWEB_RSS_URL`) — an RSS 2.0 feed, not JSON, parsed with
   `xml.etree.ElementTree`. Every actively-updated incident nationwide is one
@@ -134,62 +127,40 @@ it's wired up by default.
   not `alternative`).
 - Everything degrades gracefully: a failed weather fetch, alert fetch, or PDF
   render never blocks the core danger tables / email from sending.
-- Evacuation Orders box: `build_evacuations()` reuses
-  `significant_fire_potential.states`/`contact_email` (same monitored
-  footprint) but is toggled independently via `evacuation_orders.enabled`.
-  Rendered by `render_evac_html()`/inline in `render_text()`, positioned
-  right after the "Highest fire danger" box and before Significant Fire
-  Potential — evacuations are the most acute/actionable signal, so they lead.
-  `_extract_fire_name()` is a regex best-effort scan of each alert's
-  headline+description text (`_FIRE_NAME_RE`); commonly `None` since it's not
-  a structured CAP field — never backfill/guess it, a blank field means the
-  alert didn't state it, not that parsing failed. No free public feed has
-  structured city/fire-name data (Genasys Protect/Zonehaven etc. aren't open
-  APIs), so this NWS-alert-text scan is the best available free/keyless
-  source. (Evacuee/structure counts were dropped from this box — too
-  unreliable/rarely stated to be worth surfacing.)
-- Evacuation Orders live refresh: unlike every other box (which only updates
-  on the once-daily GitHub Actions build), the Evacuation Orders box also
-  refreshes itself client-side on every page load, since evacuation status is
-  the most time-critical signal in the brief. `render_evac_html()` appends a
-  `<script>` block (`_EVAC_LIVE_SCRIPT_TEMPLATE`, with a `__STATES_JSON__`
-  placeholder substituted via `json.dumps(states)`) that independently
-  `fetch()`es `api.weather.gov/alerts/active` straight from the browser —
-  confirmed viable via `curl -I -H "Origin: ..." ".../alerts/active?area=CA"`
-  returning `access-control-allow-origin: *`. The JS is a hand-mirrored port
-  of `fetch_evacuation_alerts()`/`_extract_fire_name()` (same event filter,
-  same regex) — keep the two in sync if either changes.
-  On success it replaces `#fw-evac-body`'s innerHTML and shows a "live as of
-  HH:MM" badge (`#fw-evac-live-badge`); on failure (offline, CORS hiccup, JS
-  disabled) it silently no-ops and leaves the server-rendered snapshot from
-  the last daily build in place — same degrade-gracefully pattern as
-  everything else. Browsers don't let `fetch()` set a custom `User-Agent`, so
-  unlike the Python side this relies on NWS not strictly requiring one for
-  browser-originated requests.
-- Significant Fire Potential live refresh: same rationale and pattern as the
-  Evacuation Orders live refresh above — added after a real incident where two
-  South Dakota Red Flag Warnings issued mid-morning didn't show up until the
-  next day's build. `render_sfp_html()` appends `_SFP_LIVE_SCRIPT_TEMPLATE`
+- Evacuation Orders box (removed): an earlier version had a dedicated box
+  fetching NWS "Evacuation Immediate"/"Civil Emergency Message" alerts
+  (`build_evacuations()`/`render_evac_html()`/`fetch_evacuation_alerts()`,
+  with its own client-side live-refresh script). It was removed because most
+  county evacuation orders are issued through channels that never reach
+  NWS/IPAWS (CodeRED, Everbridge, Nixle, local press, private vendor apps),
+  so the box was frequently silent even during real evacuations — not
+  reliable enough to justify a standalone section. The evacuation signal now
+  lives solely in the Active Incidents (InciWeb) box's EVAC tag (see below).
+  Don't reintroduce `fetch_evacuation_alerts()`/`EVAC_ALERT_EVENTS`/
+  `_extract_fire_name()` unless a genuinely reliable evacuation-order source
+  is found.
+- Significant Fire Potential live refresh: same client-side pattern
+  originally built for the (now-removed) Evacuation Orders box — added after
+  a real incident where two South Dakota Red Flag Warnings issued mid-morning
+  didn't show up until the next day's build. `render_sfp_html()` appends
+  `_SFP_LIVE_SCRIPT_TEMPLATE`
   (same `__STATES_JSON__` substitution mechanism), a hand-mirrored port of
   `fetch_fire_alerts()`/`group_alerts_by_state()` filtered to `["Red Flag
   Warning", "Fire Weather Watch"]` — no fire-name extraction here, the SFP
   box has never surfaced that. On success it replaces only `#fw-sfp-body`'s
   innerHTML (deliberately not the static Predictive Services outlook links
   next to it) and shows the same "live as of HH:MM" badge pattern
-  (`#fw-sfp-live-badge`); on failure it silently no-ops, same as the evac
-  version. Keep both JS mirrors in sync with their Python counterparts if
-  either changes.
+  (`#fw-sfp-live-badge`); on failure it silently no-ops. Keep the JS mirror
+  in sync with its Python counterpart if either changes.
 - Active Incidents (InciWeb) box: `build_active_incidents()` reuses
   `significant_fire_potential.states`/`contact_email` like the other alert
   boxes, toggled independently via `active_incidents.enabled`. Rendered by
   `render_incidents_html()`/inline in `render_text()`, positioned after
-  Significant Fire Potential and before the per-GACC danger tables. Built
-  specifically as a complement to the Evacuation Orders box, not a
-  replacement: it exists because evacuation orders issued only through a
-  county's own system (CodeRED/Everbridge/local press, never submitted to
-  IPAWS) are invisible to `fetch_evacuation_alerts()` — this box surfaces the
-  named incident itself (with a link to its official InciWeb page) so a human
-  can go check, even when no structured evacuation alert exists for it.
+  Significant Fire Potential and before the per-GACC danger tables. This box
+  is now the tool's sole evacuation signal (see "Evacuation Orders box
+  (removed)" above): it surfaces the named incident itself (with a link to
+  its official InciWeb page) so a human can go check, since no structured
+  national evacuation-order feed exists.
   `fetch_inciweb_incidents()` flags each incident with `evac: bool` via
   `_INCIWEB_EVAC_RE` (a simple case-insensitive `"evacuat"` substring match
   against that incident's InciWeb description text). Selection: every
@@ -205,16 +176,19 @@ it's wired up by default.
   "EVAC" badge (`render_incidents_html()`) / `[EVAC]` suffix (`render_text()`)
   next to the name — this is a text-match on InciWeb's PIO-written overview,
   not a structured field, so it inherits the same PIO-discretion caveat as
-  everything else here: a `False`/no-badge incident may still have an
-  active evacuation that its PIO just didn't mention in the overview text
-  (see the Evacuation Orders box for the NWS/IPAWS-sourced signal instead).
+  everything else here: a `False`/no-badge incident may still have an active
+  evacuation that its PIO just didn't mention in the overview text. Known
+  false-positive risk (not yet fixed): the naive `"evacuat"` substring match
+  also fires on text describing evacuations that were *lifted*, generic
+  safety boilerplate, or historical mentions on now-contained fires — if
+  tightening this is ever requested, look at excluding matches near
+  "lifted"/"rescinded"/"no longer"/"downgraded to Ready".
   `render_incidents_html()` splits the already-alphabetical list into two
   sequential halves (not interleaved) rendered as a two-column HTML
   `<table>` — table-based rather than CSS `column-count` for email-client
   compatibility, matching every other multi-column layout in this file. No
-  client-side live-refresh here (unlike Evacuation Orders) — daily-build
-  freshness was judged sufficient since this box's job is discovery/links,
-  not the alert itself.
+  client-side live-refresh here — daily-build freshness was judged sufficient
+  since this box's job is discovery/links, not the alert itself.
 - National Sitrep Summary box: `fetch_sitrep_pdf()` downloads the same NICC
   sitrep PDF linked in `predictive_services_links` (`SITREP_URL`), and
   `parse_sitrep_summary()` uses `pdfplumber` to regex-extract page-1 headline
@@ -266,7 +240,6 @@ it's wired up by default.
 - **Turn off weather columns:** `weather: { enabled: false }`.
 - **Turn off fuel moisture columns:** `fuel_moisture: { enabled: false }`.
 - **Turn off the National Sitrep Summary box:** `national_sitrep: { enabled: false }`.
-- **Turn off the Evacuation Orders box:** `evacuation_orders: { enabled: false }`.
 - **Turn off the Active Incidents (InciWeb) box:** `active_incidents: { enabled: false }`.
 - **Change how many incidents show in that box:** `max_items` arg on
   `fetch_inciweb_incidents()` (default 15) — not currently exposed in

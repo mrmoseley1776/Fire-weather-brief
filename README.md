@@ -21,11 +21,10 @@ windows — which is exactly what this tool uses.
 - **BI trend** vs. the prior day and the **7-day forecast peak BI** per station.
 - Optional **Low → Extreme** color chips where you supply station percentile
   breakpoints (see `thresholds` in `config.yaml`).
-- **Evacuation Orders** — active NWS evacuation alerts, with fire name when
-  the alert states it (see below).
 - **Active Incidents (InciWeb)** — a linked list of actively-updated named
-  fires in your monitored states, from the free national InciWeb feed (see
-  below).
+  fires in your monitored states, from the free national InciWeb feed, with
+  a red **EVAC** badge on any incident whose overview text mentions
+  evacuations (see below).
 
 ---
 
@@ -203,38 +202,15 @@ Both degrade gracefully: if the alert feed is briefly unreachable, the brief
 still sends with the fire danger tables and outlook links, noting the feed was
 unavailable.
 
-**Live updates.** Like the Evacuation Orders box below, the Red Flag Warning /
-Fire Weather Watch list in this section also refreshes itself in your browser
-on every page load — added after warnings issued mid-morning were missing
-until the next day's build. Same "live as of HH:MM" badge, same silent
-fallback to the morning snapshot if the live check fails. Only the alert list
-refreshes this way; the Predictive Services outlook links next to it are
-static.
-
-**Evacuation Orders box.** Right above Significant Fire Potential, a red box
-shows active evacuation-order alerts (`Evacuation Immediate` / `Civil
-Emergency Message`) for the same states, from the same `api.weather.gov` feed.
-Turn it off with `evacuation_orders: { enabled: false }`. Each alert shows the
-affected **area** (NWS alert zones are usually county-level, not exact city
-names) plus, **only when the issuing agency's alert text explicitly states
-it**, the **fire name**. Most evacuation alerts don't name the fire at all —
-that's a real gap in the source alert, not a bug here, so don't expect it to
-be populated every time. There's no free public feed with structured
-city/fire-name data (tools like Genasys Protect/Zonehaven exist but aren't
-open APIs), so this is the best available free/keyless signal. Degrades the
-same way as the alerts above:
-a feed hiccup just shows "feed unavailable" without blocking the rest of the
-brief, and most mornings this box will simply read "No active evacuation
-orders" (a good thing, not a broken feature).
-
-**Live updates.** This box (and the Red Flag Warning / Fire Weather Watch list
-above) refresh themselves every time the page is opened or reloaded — they
-fetch the latest NWS alerts directly in your browser, so they're never more
-than page-load-fresh, not just once-a-day-fresh like the rest of the brief. A
-small "live as of HH:MM" note appears once that refresh completes. If the live
+**Live updates.** The Red Flag Warning / Fire Weather Watch list in this
+section refreshes itself in your browser on every page load — added after
+warnings issued mid-morning were missing until the next day's build. A small
+"live as of HH:MM" note appears once that refresh completes; if the live
 check fails for any reason (offline, feed hiccup), the box just keeps showing
-the snapshot from that morning's build — nothing breaks either way. (Every
-other section still only updates on the daily 8 AM build.)
+the snapshot from that morning's build — nothing breaks either way. Only the
+alert list refreshes this way; the Predictive Services outlook links next to
+it are static. (Every other section, including the box below, still only
+updates on the daily 8 AM build.)
 
 **Active Incidents (InciWeb) box.** Below Significant Fire Potential, a blue
 box lists actively-updated named fires in your monitored states, sorted
@@ -242,21 +218,24 @@ alphabetically by state and laid out in two columns, pulled from InciWeb
 (`inciweb.wildfire.gov`) — the free, keyless, national system fire incident
 PIOs post directly to. Turn it off with
 `active_incidents: { enabled: false }`. Each entry links straight to that
-fire's official InciWeb page. **Why this exists:** not every county's
-evacuation order gets relayed through NWS/IPAWS (the source the Evacuation
-Orders box above uses), so a real, active evacuation can sometimes go
-unreported there — this box is a free complement, giving you a quick way to
-click through to a fire's official page and check for evacuation detail
-yourself. It is *not* a structured evacuation feed itself: whether an
-incident's InciWeb page mentions evacuations at all is up to that incident's
-PIO. Any incident whose InciWeb overview text mentions evacuations gets a red
-**EVAC** badge and is never dropped from the list, even on a day with more
-than 15 active incidents nationwide — everything else is capped at 15,
-most-recently-updated first. A fire without the badge may still have an
-active evacuation its PIO simply didn't mention in the overview text.
-Degrades the same way as every other box — a feed hiccup just shows
-"feed unavailable," and a quiet stretch with no actively-updated incidents in
-your states will just read "No actively-updated named incidents."
+fire's official InciWeb page. **This box is the brief's evacuation signal:**
+an earlier version had a separate Evacuation Orders box built on NWS/IPAWS
+alerts, but it was removed because most county evacuation orders never reach
+NWS/IPAWS (they go out through CodeRED, Everbridge, Nixle, local press, or
+private vendor apps instead) — the box was too often silently empty during
+real evacuations to be trustworthy on its own. Any incident whose InciWeb
+overview text mentions evacuations instead gets a red **EVAC** badge and is
+never dropped from the list, even on a day with more than 15 active incidents
+nationwide — everything else is capped at 15, most-recently-updated first.
+It is *not* a structured evacuation feed: whether an incident's InciWeb page
+mentions evacuations at all is up to that incident's PIO, so a fire without
+the badge may still have an active evacuation its PIO simply didn't mention,
+and (more rarely) the badge can fire on text describing an evacuation that
+was already lifted. Treat the badge as a prompt to click through and check
+the linked page yourself, not as a guarantee either way. Degrades the same
+way as every other box — a feed hiccup just shows "feed unavailable," and a
+quiet stretch with no actively-updated incidents in your states will just
+read "No actively-updated named incidents."
 
 **National Sitrep Summary box.** Below the SC/ERC/BI legend, a gold summary
 box pulls the headline numbers off page 1 of the same daily NICC Incident

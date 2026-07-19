@@ -65,23 +65,14 @@ significant_fire_potential:
     - { label: "N. Rockies", url: "https://gacc.nifc.gov/nrcc/predictive/outlooks/outlooks.htm" }
     - { label: "Rocky Mtn", url: "https://gacc.nifc.gov/rmcc/" }
 
-# Active evacuation orders for the states above, pulled from the same NWS
-# alerts feed (event types "Evacuation Immediate" / "Civil Emergency Message" --
-# issued by local emergency management via IPAWS). Reuses the states/
-# contact_email from significant_fire_potential above; toggle independently
-# here. Best-effort: fire name is only shown when the issuing agency's alert
-# text explicitly states it -- most alerts won't, and that's a gap in the
-# source alert, not this tool.
-evacuation_orders:
-  enabled: true
-
 # Actively-updated named incidents from InciWeb (inciweb.wildfire.gov), the
 # free/keyless national feed incident PIOs post directly to. Filtered to the
-# states above; each entry links to that incident's official InciWeb page --
-# the best place to check for evacuation detail when the NWS-alert-based
-# Evacuation Orders box above didn't catch it (not every county's evacuation
-# order gets relayed through NWS/IPAWS). Complementary to that box, not a
-# replacement for it.
+# states above; each entry links to that incident's official InciWeb page.
+# A red EVAC tag/badge appears when that incident's InciWeb overview text
+# mentions evacuations -- this is the tool's evacuation signal (the earlier
+# NWS-alert-based Evacuation Orders box was removed: too many counties issue
+# evacuation orders through channels other than NWS/IPAWS for that box to be
+# reliable on its own).
 active_incidents:
   enabled: true
 
