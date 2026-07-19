@@ -870,12 +870,128 @@ def render_sfp_html(sfp: dict) -> str:
                          f'<a href="{l["url"]}" style="color:#1565c0;">{l["label"]}</a>'
                          for l in links) + '</div>')
 
+    states = sfp.get("states", [])
+    script = (_SFP_LIVE_SCRIPT_TEMPLATE.replace("__STATES_JSON__", json.dumps(states))
+              if states else "")
+
     return (
         '<div class="fw-box" style="background:#faf3df;border:1px solid #d9c48a;border-radius:8px;'
         'padding:12px 16px;margin:0 0 18px;">'
         '<div style="font-weight:800;color:#9c7a16;font-size:15px;margin-bottom:6px;">'
-        'Significant Fire Potential</div>'
-        f'{inner}{link_html}</div>')
+        'Significant Fire Potential'
+        '<span id="fw-sfp-live-badge" style="display:none;font-weight:400;'
+        'font-size:11px;color:#8a8574;"></span></div>'
+        f'<div id="fw-sfp-body">{inner}</div>{link_html}</div>'
+        f'{script}')
+
+
+# Client-side live refresh for the Significant Fire Potential box. Same
+# rationale/pattern as _EVAC_LIVE_SCRIPT_TEMPLATE below (mirrors
+# fetch_fire_alerts()/group_alerts_by_state() in JS instead of the evac
+# equivalents) -- fetches Red Flag Warning/Fire Weather Watch alerts straight
+# from api.weather.gov on page load so this box isn't stuck showing only
+# whatever was active at the last once-daily GitHub Actions build. No
+# fire-name extraction here (SFP alerts don't carry that in the rendered box).
+# Only replaces #fw-sfp-body (not the static Predictive Services outlook
+# links) and leaves the server-rendered snapshot in place on any failure.
+_SFP_LIVE_SCRIPT_TEMPLATE = """
+<script>
+(function(){
+  var STATES = __STATES_JSON__;
+  if (!STATES.length) { return; }
+  var SFP_EVENTS = ["Red Flag Warning", "Fire Weather Watch"];
+
+  function esc(s){
+    var d = document.createElement('div');
+    d.textContent = (s === null || s === undefined) ? '' : String(s);
+    return d.innerHTML;
+  }
+  function fmtTime(iso){
+    if (!iso) { return ''; }
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) { return ''; }
+    return d.toLocaleString('en-US', {month: 'short', day: 'numeric', hour: 'numeric'});
+  }
+  function alertLine(a){
+    var tagColor = a.event === 'Red Flag Warning' ? '#c62828' : '#ef6c00';
+    var when = fmtTime(a.onset);
+    var ends = fmtTime(a.ends);
+    var span = (when || ends) ? (' (' + esc(when) + '&ndash;' + esc(ends) + ')') : '';
+    return '<li style="margin-bottom:3px;"><span style="background:' + tagColor +
+      ';color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;">' + esc(a.event) +
+      '</span> ' + esc(a.area) + span + '</li>';
+  }
+
+  fetch('https://api.weather.gov/alerts/active?area=' + STATES.join(',') +
+        '&status=actual&message_type=alert',
+        {headers: {'Accept': 'application/geo+json'}})
+    .then(function(r){ if (!r.ok) { throw new Error('HTTP ' + r.status); } return r.json(); })
+    .then(function(data){
+      var alerts = [];
+      (data.features || []).forEach(function(feat){
+        var p = feat.properties || {};
+        var event = (p.event || '').trim();
+        if (SFP_EVENTS.indexOf(event) === -1) { return; }
+        var states = [];
+        ((p.geocode && p.geocode.UGC) || []).forEach(function(u){
+          if (u.length >= 2) { states.push(u.slice(0, 2).toUpperCase()); }
+        });
+        alerts.push({
+          event: event,
+          area: p.areaDesc || '',
+          onset: p.onset || p.effective || '',
+          ends: p.ends || p.expires || '',
+          states: states
+        });
+      });
+
+      var grouped = {};
+      STATES.forEach(function(s){ grouped[s] = []; });
+      var other = [];
+      alerts.forEach(function(a){
+        var placed = false;
+        a.states.forEach(function(s){
+          if (Object.prototype.hasOwnProperty.call(grouped, s)) {
+            grouped[s].push(a);
+            placed = true;
+          }
+        });
+        if (!placed) { other.push(a); }
+      });
+
+      var html = '';
+      if (!alerts.length) {
+        html = '<div style="font-size:13px;color:#2e7d32;">No active Red Flag ' +
+               'Warnings or Fire Weather Watches in the monitored states.</div>';
+      } else {
+        STATES.forEach(function(s){
+          var list = grouped[s];
+          if (!list.length) { return; }
+          html += '<div style="margin:6px 0 2px;font-weight:700;color:#37474f;">' +
+                  esc(s) + '</div><ul style="margin:0 0 6px 18px;padding:0;">' +
+                  list.map(alertLine).join('') + '</ul>';
+        });
+        other.forEach(function(a){
+          html += '<ul style="margin:0 0 6px 18px;padding:0;">' + alertLine(a) + '</ul>';
+        });
+      }
+
+      var body = document.getElementById('fw-sfp-body');
+      if (body) { body.innerHTML = html; }
+      var badge = document.getElementById('fw-sfp-live-badge');
+      if (badge) {
+        var t = new Date().toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'});
+        badge.textContent = ' \\u00b7 live as of ' + t;
+        badge.style.display = 'inline';
+      }
+    })
+    .catch(function(){
+      // Live refresh failed (offline, CORS hiccup, etc.) -- leave the
+      // server-rendered snapshot from the last daily build in place.
+    });
+})();
+</script>
+"""
 
 
 # Client-side live refresh for the Evacuation Orders box. NWS's alerts API
@@ -1277,7 +1393,10 @@ def build_sfp(cfg: dict) -> Optional[dict]:
     states = [str(s).upper() for s in sc.get("states", [])]
     contact = sc.get("contact_email") or cfg.get("email", {}).get("from_addr", "n/a")
     links = sc.get("predictive_services_links", []) or []
-    result = {"grouped": {}, "other": [], "links": links, "error": None}
+    # "states" travels with the result (even on failure/empty) so
+    # render_sfp_html() can embed it for the client-side live-refresh script
+    # without needing a separate path back to config.yaml.
+    result = {"grouped": {}, "other": [], "links": links, "error": None, "states": states}
     try:
         alerts = fetch_fire_alerts(states, contact)
         grouped, other = group_alerts_by_state(alerts, states)

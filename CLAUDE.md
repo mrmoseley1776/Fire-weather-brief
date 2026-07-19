@@ -165,9 +165,20 @@ it's wired up by default.
   the last daily build in place — same degrade-gracefully pattern as
   everything else. Browsers don't let `fetch()` set a custom `User-Agent`, so
   unlike the Python side this relies on NWS not strictly requiring one for
-  browser-originated requests. Deliberately scoped to this box only, not
-  Significant Fire Potential (Red Flag Warning/Fire Weather Watch) — the
-  once-a-day refresh is considered sufficient there.
+  browser-originated requests.
+- Significant Fire Potential live refresh: same rationale and pattern as the
+  Evacuation Orders live refresh above — added after a real incident where two
+  South Dakota Red Flag Warnings issued mid-morning didn't show up until the
+  next day's build. `render_sfp_html()` appends `_SFP_LIVE_SCRIPT_TEMPLATE`
+  (same `__STATES_JSON__` substitution mechanism), a hand-mirrored port of
+  `fetch_fire_alerts()`/`group_alerts_by_state()` filtered to `["Red Flag
+  Warning", "Fire Weather Watch"]` — no fire-name extraction here, the SFP
+  box has never surfaced that. On success it replaces only `#fw-sfp-body`'s
+  innerHTML (deliberately not the static Predictive Services outlook links
+  next to it) and shows the same "live as of HH:MM" badge pattern
+  (`#fw-sfp-live-badge`); on failure it silently no-ops, same as the evac
+  version. Keep both JS mirrors in sync with their Python counterparts if
+  either changes.
 - Active Incidents (InciWeb) box: `build_active_incidents()` reuses
   `significant_fire_potential.states`/`contact_email` like the other alert
   boxes, toggled independently via `active_incidents.enabled`. Rendered by

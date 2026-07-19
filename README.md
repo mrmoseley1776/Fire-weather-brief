@@ -203,6 +203,14 @@ Both degrade gracefully: if the alert feed is briefly unreachable, the brief
 still sends with the fire danger tables and outlook links, noting the feed was
 unavailable.
 
+**Live updates.** Like the Evacuation Orders box below, the Red Flag Warning /
+Fire Weather Watch list in this section also refreshes itself in your browser
+on every page load — added after warnings issued mid-morning were missing
+until the next day's build. Same "live as of HH:MM" badge, same silent
+fallback to the morning snapshot if the live check fails. Only the alert list
+refreshes this way; the Predictive Services outlook links next to it are
+static.
+
 **Evacuation Orders box.** Right above Significant Fire Potential, a red box
 shows active evacuation-order alerts (`Evacuation Immediate` / `Civil
 Emergency Message`) for the same states, from the same `api.weather.gov` feed.
@@ -219,14 +227,14 @@ a feed hiccup just shows "feed unavailable" without blocking the rest of the
 brief, and most mornings this box will simply read "No active evacuation
 orders" (a good thing, not a broken feature).
 
-**Live updates.** This box alone refreshes itself every time the page is
-opened or reloaded — it fetches the latest NWS alerts directly in your
-browser, so it's never more than page-load-fresh, not just once-a-day-fresh
-like the rest of the brief. A small "live as of HH:MM" note appears once that
-refresh completes. If the live check fails for any reason (offline, feed
-hiccup), the box just keeps showing the snapshot from that morning's build —
-nothing breaks either way. (Every other section still only updates on the
-daily 8 AM build.)
+**Live updates.** This box (and the Red Flag Warning / Fire Weather Watch list
+above) refresh themselves every time the page is opened or reloaded — they
+fetch the latest NWS alerts directly in your browser, so they're never more
+than page-load-fresh, not just once-a-day-fresh like the rest of the brief. A
+small "live as of HH:MM" note appears once that refresh completes. If the live
+check fails for any reason (offline, feed hiccup), the box just keeps showing
+the snapshot from that morning's build — nothing breaks either way. (Every
+other section still only updates on the daily 8 AM build.)
 
 **Active Incidents (InciWeb) box.** Below Significant Fire Potential, a blue
 box lists actively-updated named fires in your monitored states, sorted
