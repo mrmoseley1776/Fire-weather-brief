@@ -179,17 +179,29 @@ it's wired up by default.
   IPAWS) are invisible to `fetch_evacuation_alerts()` — this box surfaces the
   named incident itself (with a link to its official InciWeb page) so a human
   can go check, even when no structured evacuation alert exists for it.
-  `fetch_inciweb_incidents()` selects which incidents make the list by
-  `pubDate` (most-recently-updated first, capped at 15/`max_items` — the live
-  feed can carry 50+ incidents nationwide on a bad fire day) but then
-  re-sorts that selected set alphabetically by `(state, name)` before
-  returning, so a brand-new incident can't get bumped by sort order alone
-  while the *displayed* list still reads alphabetically. `render_incidents_html()`
-  splits the already-alphabetical list into two sequential halves (not
-  interleaved) rendered as a two-column HTML `<table>` — table-based rather
-  than CSS `column-count` for email-client compatibility, matching every
-  other multi-column layout in this file. No client-side live-refresh here
-  (unlike Evacuation Orders) — daily-build
+  `fetch_inciweb_incidents()` flags each incident with `evac: bool` via
+  `_INCIWEB_EVAC_RE` (a simple case-insensitive `"evacuat"` substring match
+  against that incident's InciWeb description text). Selection: every
+  `evac=True` incident is ALWAYS kept, regardless of `max_items` — an
+  incident with a real evacuation mention can never be dropped for a
+  recency cutoff, even if that means the list exceeds 15 on a bad day.
+  Remaining slots up to `max_items` (default 15 — the live feed can carry
+  50+ incidents nationwide) are then filled by most-recently-updated
+  `pubDate` among the non-evac incidents. The selected set is re-sorted
+  alphabetically by `(state, name)` before returning, so a brand-new
+  incident can't get bumped by sort order alone while the *displayed* list
+  still reads alphabetically. Flagged incidents render with a small red
+  "EVAC" badge (`render_incidents_html()`) / `[EVAC]` suffix (`render_text()`)
+  next to the name — this is a text-match on InciWeb's PIO-written overview,
+  not a structured field, so it inherits the same PIO-discretion caveat as
+  everything else here: a `False`/no-badge incident may still have an
+  active evacuation that its PIO just didn't mention in the overview text
+  (see the Evacuation Orders box for the NWS/IPAWS-sourced signal instead).
+  `render_incidents_html()` splits the already-alphabetical list into two
+  sequential halves (not interleaved) rendered as a two-column HTML
+  `<table>` — table-based rather than CSS `column-count` for email-client
+  compatibility, matching every other multi-column layout in this file. No
+  client-side live-refresh here (unlike Evacuation Orders) — daily-build
   freshness was judged sufficient since this box's job is discovery/links,
   not the alert itself.
 - National Sitrep Summary box: `fetch_sitrep_pdf()` downloads the same NICC

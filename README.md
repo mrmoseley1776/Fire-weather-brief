@@ -241,7 +241,12 @@ unreported there — this box is a free complement, giving you a quick way to
 click through to a fire's official page and check for evacuation detail
 yourself. It is *not* a structured evacuation feed itself: whether an
 incident's InciWeb page mentions evacuations at all is up to that incident's
-PIO. Degrades the same way as every other box — a feed hiccup just shows
+PIO. Any incident whose InciWeb overview text mentions evacuations gets a red
+**EVAC** badge and is never dropped from the list, even on a day with more
+than 15 active incidents nationwide — everything else is capped at 15,
+most-recently-updated first. A fire without the badge may still have an
+active evacuation its PIO simply didn't mention in the overview text.
+Degrades the same way as every other box — a feed hiccup just shows
 "feed unavailable," and a quiet stretch with no actively-updated incidents in
 your states will just read "No actively-updated named incidents."
 

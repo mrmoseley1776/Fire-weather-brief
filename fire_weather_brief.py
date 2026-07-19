@@ -446,6 +446,7 @@ def group_alerts_by_state(alerts: list[dict], states_order: list[str]) -> dict:
 
 
 _INCIWEB_STATE_RE = re.compile(r"State:\s*([A-Za-z .]+?)\s*(?:\n|---|$)")
+_INCIWEB_EVAC_RE = re.compile(r"evacuat", re.IGNORECASE)
 
 
 def fetch_inciweb_incidents(states: list[str], contact: str, timeout: int = 20,
@@ -457,9 +458,12 @@ def fetch_inciweb_incidents(states: list[str], contact: str, timeout: int = 20,
     incident's free-text overview mentions evacuations at all is entirely up
     to that incident's PIO (see README/CLAUDE.md). Best-effort like every
     other feed here: any fetch/parse failure should be caught by the caller,
-    not here. Selection (which incidents make the cut) is still by most-
-    recently-updated -- only the final display order is alphabetical, so a
-    quiet, longstanding incident can't push a brand-new one out of the list."""
+    not here. Selection: incidents whose description text mentions
+    "evacuat..." are ALWAYS kept (can push the list past max_items on a bad
+    day -- an active evacuation is never dropped for a recency cutoff), then
+    remaining slots up to max_items are filled by most-recently-updated. Only
+    the final display order is alphabetical, so a quiet, longstanding
+    incident can't push a brand-new one out of the list."""
     if not states:
         return []
     headers = {"User-Agent": f"ProdigyFireWeatherBrief ({contact})"}
@@ -488,10 +492,14 @@ def fetch_inciweb_incidents(states: list[str], contact: str, timeout: int = 20,
             "state": abbr,
             "link": link,
             "updated": updated,
+            "evac": bool(_INCIWEB_EVAC_RE.search(desc)),
         })
     incidents.sort(key=lambda i: i["updated"] or dt.datetime.min.replace(
         tzinfo=dt.timezone.utc), reverse=True)
-    selected = incidents[:max_items]
+    evac_incidents = [i for i in incidents if i["evac"]]
+    other_incidents = [i for i in incidents if not i["evac"]]
+    remaining_slots = max(max_items - len(evac_incidents), 0)
+    selected = evac_incidents + other_incidents[:remaining_slots]
     selected.sort(key=lambda i: (i["state"], i["name"]))
     return selected
 
@@ -1053,10 +1061,14 @@ def render_incidents_html(incidents_data: dict) -> str:
                  'No actively-updated named incidents in the monitored states.</div>')
     else:
         def inc_line(i):
+            evac_tag = (' <span style="background:#c62828;color:#fff;font-size:10px;'
+                        'font-weight:700;padding:1px 5px;border-radius:3px;">EVAC</span>'
+                        if i.get("evac") else "")
             return (f'<li style="margin-bottom:3px;">'
                     f'<a href="{i["link"]}" style="color:#1565c0;font-weight:600;'
                     f'text-decoration:none;">{i["name"]}</a> '
-                    f'<span style="color:#607d8b;font-size:12px;">({i["state"]})</span></li>')
+                    f'<span style="color:#607d8b;font-size:12px;">({i["state"]})</span>'
+                    f'{evac_tag}</li>')
 
         def col(items):
             return ('<ul style="margin:0;padding:0 0 0 18px;">'
@@ -1086,7 +1098,10 @@ def render_incidents_html(incidents_data: dict) -> str:
         '<div style="margin-top:6px;font-size:11px;color:#8a8574;">'
         'Source: InciWeb national incident feed, filtered to your monitored states. '
         'Each link goes to that incident&rsquo;s official page &mdash; the best place '
-        'to check for evacuation detail the source feeds above may not have caught.'
+        'to check for evacuation detail the source feeds above may not have caught. '
+        'A red EVAC tag means that incident&rsquo;s InciWeb overview text mentions '
+        'evacuations &mdash; those incidents are never dropped from this list, even '
+        'on a high-activity day.'
         '</div></div>')
 
 
@@ -1192,7 +1207,8 @@ def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
             lines.append("  No actively-updated named incidents in the monitored states.")
         else:
             for i in incidents["incidents"]:
-                lines.append(f"  {i['name']} ({i['state']}) -> {i['link']}")
+                evac_tag = " [EVAC]" if i.get("evac") else ""
+                lines.append(f"  {i['name']} ({i['state']}){evac_tag} -> {i['link']}")
         lines.append("")
 
     for g, rows in gacc_rows:
