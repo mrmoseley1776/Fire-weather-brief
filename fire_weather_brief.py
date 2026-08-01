@@ -58,6 +58,23 @@ NWS_ALERTS_ENDPOINT = "https://api.weather.gov/alerts/active"
 # list, not as a structured evacuation-order source -- see build_active_incidents().
 INCIWEB_RSS_URL = "https://inciweb.wildfire.gov/incidents/rss.xml"
 
+# Each GACC's official "Weather" landing page, which links out to that GACC's
+# RAWS station browsing tool (MesoWest map, WRCC/DRI RAWS archive, or NOAA
+# hazards map -- the tool varies by GACC, there's no single templated URL
+# pattern that works across all six e.g. MesoWest's state= query param isn't
+# consistently the GACC code). Used to hyperlink each GACC's section header so
+# the user can browse stations beyond the handful hardcoded in config.yaml.
+# Keyed by coordination_centers[].code in config.yaml. Verified reachable
+# 2026-08; if a GACC restructures its site this link may need updating.
+GACC_RAWS_URLS = {
+    "NWCC": "https://gacc.nifc.gov/nwcc/predict/weather.aspx",
+    "ONCC": "https://gacc.nifc.gov/oncc/predictive/weather/index.htm",
+    "OSCC": "https://gacc.nifc.gov/oscc/predictive/weather/index.htm",
+    "GBCC": "https://gacc.nifc.gov/gbcc/weather.php",
+    "NRCC": "https://gacc.nifc.gov/nrcc/predictive/weather/weather.htm",
+    "RMCC": "https://gacc.nifc.gov/rmcc/weather.php",
+}
+
 # Full state/territory name -> USPS abbreviation, for matching InciWeb's
 # "State: <full name>" text against the abbreviations used everywhere else in
 # this config (significant_fire_potential.states etc).
@@ -668,10 +685,14 @@ def render_html(gacc_rows, ranked, thresholds, generated, sfp=None,
             '<th align="center">BI</th><th align="center">BI &Delta;</th>'
             f'<th align="center">7d peak</th>{wx_head}{fm_head}</tr></thead>'
             f'<tbody>{"".join(tr)}</tbody></table>')
+        raws_url = GACC_RAWS_URLS.get(g.code)
+        name_html = (
+            f'<a href="{raws_url}" style="color:inherit;text-decoration:underline;" '
+            f'title="Browse {g.code} RAWS stations">{g.name}</a>' if raws_url else g.name)
         blocks.append(
             '<div class="fw-gacc-block" style="page-break-inside:avoid;break-inside:avoid;">'
             f'<h3 class="fw-h3" style="margin:22px 0 6px;color:#15171c;border-bottom:2px solid '
-            f'#B18C19;padding-bottom:4px;">{g.name} '
+            f'#B18C19;padding-bottom:4px;">{name_html} '
             f'<span style="color:#8a8574;font-weight:400;font-size:13px;">'
             f'({g.code} &middot; fuel model {g.fuel_models})</span></h3>{table}</div>')
 
@@ -1079,7 +1100,9 @@ def render_text(gacc_rows, ranked, generated, sfp=None, want_weather=True,
         lines.append("")
 
     for g, rows in gacc_rows:
-        lines.append(f"{g.name} ({g.code}, fuel model {g.fuel_models})")
+        raws_url = GACC_RAWS_URLS.get(g.code)
+        raws_suffix = f" -- more RAWS stations: {raws_url}" if raws_url else ""
+        lines.append(f"{g.name} ({g.code}, fuel model {g.fuel_models}){raws_suffix}")
         hdr = f"  {'Station':22} {'SC':>4} {'ERC':>4} {'BI':>4} {'7dPk':>5}"
         if want_weather:
             hdr += f" {'RH%':>4} {'Wind':>5} {'Gust':>5}"

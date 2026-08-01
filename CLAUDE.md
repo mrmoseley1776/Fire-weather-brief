@@ -209,6 +209,19 @@ it's wired up by default.
   !important` (same-specificity longhand-after-shorthand override); don't
   collapse these two classes back into one without re-checking that the PDF
   export still shows the extra spacing.
+- GACC RAWS links: each GACC section header (`{g.name}`, e.g. "Northwest —
+  Oregon / Washington") is hyperlinked to that GACC's official weather/RAWS
+  landing page via `GACC_RAWS_URLS` (a `code -> URL` dict near the top of the
+  file, alongside `FEMS_BASE`/`INCIWEB_RSS_URL`), so the user can browse RAWS
+  stations beyond the handful hardcoded per GACC in `config.yaml`. Wired into
+  `render_html()`'s per-GACC block (`<h3>` header) and `render_text()`'s
+  plain-text GACC header line (appended as `-- more RAWS stations: <url>`).
+  There's no single URL pattern that works across all six GACCs (e.g.
+  MesoWest's `state=` query param is the GACC code for NWCC but plain `CA`
+  for OSCC), so each URL was hand-verified rather than templated — if a new
+  coordination center is added to `config.yaml`, add its code to
+  `GACC_RAWS_URLS` too, or that GACC's header just renders unlinked (`.get()`
+  fallback, not an error).
 - Link previews: `render_html()`'s `public_url` param (sourced from
   `site.public_url` in config.yaml, `None`/unset by default) drives a
   `<title>` + Open Graph + Twitter Card `<meta>` block in `<head>`, so sharing
@@ -234,7 +247,9 @@ it's wired up by default.
   `stationName` so rows line up.
 - **Add a coordination center (e.g. Southwest AZ/NM):** append a new
   `coordination_centers` entry (`code`, `name`, `fuel_models`, `stations`) and add
-  its states to `significant_fire_potential.states`.
+  its states to `significant_fire_potential.states`. Also add its code/RAWS
+  landing page URL to `GACC_RAWS_URLS` (else that section header just renders
+  unlinked).
 - **Change fuel model:** per-center `fuel_models` (V/W/X/Y/Z); use the model from
   that area's Fire Danger Operating Plan (Y=timber default, X=chaparral common in SoCal).
 - **Turn off weather columns:** `weather: { enabled: false }`.

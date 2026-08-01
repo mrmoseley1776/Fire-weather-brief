@@ -15,7 +15,9 @@ windows — which is exactly what this tool uses.
 ## What the brief contains
 
 - **One table per coordination center** (NWCC, ONCC, OSCC, GBCC, NRCC, RMCC),
-  each row listing **SC**, **ERC**, and **BI** for a station.
+  each row listing **SC**, **ERC**, and **BI** for a station. Each center's
+  header links to that GACC's official RAWS station list, so you can browse
+  stations beyond the handful configured below.
 - A **"Highest fire danger this morning"** summary ranking the hottest stations
   across every center by Burning Index.
 - **BI trend** vs. the prior day and the **7-day forecast peak BI** per station.
